@@ -253,8 +253,9 @@ def test_out_of_range_off_step_and_malformed_manual_targets_are_rejected(target)
 
 def test_dbus_boolean_cannot_become_a_numeric_manual_request():
     dbus_boolean = type("Boolean", (int,), {"__module__": "dbus"})
+    value = dbus_boolean(1)
     with pytest.raises(InvalidObservation):
-        number(dbus_boolean(1))
+        number(value)
 
 
 def test_preset_and_incomplete_capability_block_manual_target_without_changing_mode():

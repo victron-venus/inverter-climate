@@ -6,7 +6,7 @@ import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from .models import Climate, InvalidObservation, number
+from .models import Climate, number
 from .storage import atomic_json
 
 
@@ -77,7 +77,7 @@ class ControlBroker:
                     value = number(value)
                 else:
                     value = self._climate.hvac_mode_command(value)
-            except (InvalidObservation, TypeError, ValueError):
+            except (TypeError, ValueError):
                 return False
             if kind == "mode" and value == "off":
                 self._queue.clear()
@@ -180,6 +180,30 @@ def save_intent(path: Path, binding: str, intent: ManualIntent):
     atomic_json(path, {"version": 1, "identity": binding, "intent": asdict(intent)})
 
 
+def _validate_intent(intent: ManualIntent):
+    if intent.kind not in ("temperature", "mode") or intent.outcome not in (
+        "pending",
+        "unconfirmed",
+        "confirmed",
+        "rejected",
+    ):
+        raise ValueError("invalid manual command journal state")
+    if intent.kind == "mode":
+        if intent.value not in ("heat", "off"):
+            raise ValueError("invalid manual command journal mode")
+    elif not -100 <= number(intent.value) <= 100:
+        raise ValueError("invalid manual command journal temperature")
+    if number(intent.sent_at) < 0:
+        raise ValueError("invalid manual command journal time")
+    if intent.baseline_target_c is not None:
+        number(intent.baseline_target_c)
+    if not all(
+        isinstance(value, str) and len(value) <= 64
+        for value in (intent.baseline_mode, intent.baseline_preset)
+    ):
+        raise ValueError("invalid manual command journal observation")
+
+
 def load_intent(path: Path, binding: str) -> ManualIntent | None:
     if not path.exists():
         return None
@@ -192,27 +216,7 @@ def load_intent(path: Path, binding: str) -> ManualIntent | None:
         if data.get("identity") != binding:
             raise ValueError("manual command journal belongs to another thermostat")
         intent = ManualIntent(**data["intent"])
-        if intent.kind not in ("temperature", "mode") or intent.outcome not in (
-            "pending",
-            "unconfirmed",
-            "confirmed",
-            "rejected",
-        ):
-            raise ValueError("invalid manual command journal state")
-        if intent.kind == "mode":
-            if intent.value not in ("heat", "off"):
-                raise ValueError("invalid manual command journal mode")
-        elif not -100 <= number(intent.value) <= 100:
-            raise ValueError("invalid manual command journal temperature")
-        if number(intent.sent_at) < 0:
-            raise ValueError("invalid manual command journal time")
-        if intent.baseline_target_c is not None:
-            number(intent.baseline_target_c)
-        if not all(
-            isinstance(value, str) and len(value) <= 64
-            for value in (intent.baseline_mode, intent.baseline_preset)
-        ):
-            raise ValueError("invalid manual command journal observation")
+        _validate_intent(intent)
         if intent.outstanding:
             # A crash may occur either side of the POST. Observation can resolve
             # the intent, but restarting can never turn it into a resend.

@@ -43,6 +43,35 @@ def native_temperature(value: float, unit: str) -> float:
     raise InvalidObservation("unsupported temperature unit")
 
 
+def _climate_step(attrs: dict, unit: str) -> float:
+    # HA permits integrations to omit precision. Use a conservative native
+    # half-degree (C) or whole-degree (F) step until one is reported.
+    raw_step = attrs.get("target_temp_step")
+    if raw_step is None:
+        raw_step = 0.5 if unit == "°C" else 1
+    step = number(raw_step)
+    step_c = step if unit == "°C" else step * 5 / 9
+    if not 0 < step_c <= 5:
+        raise InvalidObservation("invalid thermostat step")
+    return step_c
+
+
+def _climate_capabilities(attrs: dict) -> tuple[bool, tuple[str, ...]]:
+    features = attrs.get("supported_features", 0)
+    if isinstance(features, bool) or not isinstance(features, int) or features < 0:
+        raise InvalidObservation("invalid thermostat features")
+    modes = attrs.get("hvac_modes")
+    if modes is None:
+        modes = []
+    if (
+        not isinstance(modes, list)
+        or any(not isinstance(item, str) or item not in _HVAC_MODES for item in modes)
+        or len(set(modes)) != len(modes)
+    ):
+        raise InvalidObservation("invalid thermostat HVAC modes")
+    return bool(features & 1), tuple(modes)
+
+
 @dataclass(frozen=True)
 class Climate:
     mode: str
@@ -137,25 +166,8 @@ class Climate:
             raise InvalidObservation("invalid thermostat range")
         if not -100 <= current <= 100:
             raise InvalidObservation("invalid current temperature")
-        # HA permits integrations to omit precision. Use a conservative native
-        # half-degree (C) or whole-degree (F) step until one is reported.
-        raw_step = attrs.get("target_temp_step")
-        step = number((0.5 if unit == "°C" else 1) if raw_step is None else raw_step)
-        step_c = step if unit == "°C" else step * 5 / 9
-        if not 0 < step_c <= 5:
-            raise InvalidObservation("invalid thermostat step")
-        features = attrs.get("supported_features", 0)
-        if isinstance(features, bool) or not isinstance(features, int) or features < 0:
-            raise InvalidObservation("invalid thermostat features")
-        modes = attrs.get("hvac_modes")
-        if modes is None:
-            modes = []
-        if (
-            not isinstance(modes, list)
-            or any(not isinstance(item, str) or item not in _HVAC_MODES for item in modes)
-            or len(set(modes)) != len(modes)
-        ):
-            raise InvalidObservation("invalid thermostat HVAC modes")
+        step_c = _climate_step(attrs, unit)
+        supports_target, modes = _climate_capabilities(attrs)
         return cls(
             str(mode),
             str(attrs.get("hvac_action", "unknown")),
@@ -165,9 +177,9 @@ class Climate:
             maximum,
             step_c,
             str(attrs.get("preset_mode") or "none"),
-            bool(features & 1),
+            supports_target,
             unit,
-            tuple(modes),
+            modes,
         )
 
 

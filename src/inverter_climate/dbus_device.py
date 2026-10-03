@@ -25,12 +25,18 @@ _VELIB = Path("/opt/victronenergy/dbus-systemcalc-py/ext/velib_python")
 _TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _TEMPERATURE = "/SwitchableOutput/0"
 _MODE = "/SwitchableOutput/1"
+_HVAC_MODE = "/Climate/HvacMode"
+_CONTROL_ENABLED = "/Climate/ControlEnabled"
+_CONTROL_AVAILABLE = "/Climate/ControlAvailable"
+_CONTROL_PENDING = "/Climate/ControlPending"
+_CONTROL_OUTCOME = "/Climate/ControlOutcome"
+_CONTROL_REASON = "/Climate/ControlReason"
 _DISABLED = 0x20
 _EMPTY = {
     "/Connected": 0,
     "/Temperature": None,
     "/Climate/TargetTemperature": None,
-    "/Climate/HvacMode": "unknown",
+    _HVAC_MODE: "unknown",
     "/Climate/HvacAction": "unknown",
     "/Climate/ServiceMode": "unknown",
     "/Climate/Phase": "unknown",
@@ -39,11 +45,11 @@ _EMPTY = {
     "/Climate/EstimatedHeatingPower": None,
     "/Climate/IntegrationHealthy": 0,
     "/Climate/LastUpdate": None,
-    "/Climate/ControlEnabled": 0,
-    "/Climate/ControlAvailable": 0,
-    "/Climate/ControlPending": 0,
-    "/Climate/ControlOutcome": "idle",
-    "/Climate/ControlReason": "disabled",
+    _CONTROL_ENABLED: 0,
+    _CONTROL_AVAILABLE: 0,
+    _CONTROL_PENDING: 0,
+    _CONTROL_OUTCOME: "idle",
+    _CONTROL_REASON: "disabled",
     f"{_TEMPERATURE}/Dimming": None,
     f"{_TEMPERATURE}/Measurement": None,
     f"{_TEMPERATURE}/Status": _DISABLED,
@@ -103,7 +109,7 @@ def _snapshot(status: Mapping, *, commands_supported: bool = False) -> dict:
                     "/Connected": 1,
                     "/Temperature": current,
                     "/Climate/TargetTemperature": target,
-                    "/Climate/HvacMode": _token(climate.get("mode")),
+                    _HVAC_MODE: _token(climate.get("mode")),
                     "/Climate/HvacAction": _token(climate.get("action")),
                 }
             )
@@ -127,7 +133,7 @@ def _snapshot(status: Mapping, *, commands_supported: bool = False) -> dict:
 
 def _control_snapshot(control, values, commands_supported):
     """Advertise observed values and only capabilities backed by the broker."""
-    mode = values["/Climate/HvacMode"]
+    mode = values[_HVAC_MODE]
     if values["/Connected"]:
         values[f"{_TEMPERATURE}/Measurement"] = values["/Temperature"]
         if mode == "heat":
@@ -137,13 +143,13 @@ def _control_snapshot(control, values, commands_supported):
         return
     enabled = control.get("enabled") is True
     available = enabled and control.get("available") is True and bool(values["/Connected"])
-    values["/Climate/ControlEnabled"] = int(enabled)
-    values["/Climate/ControlAvailable"] = int(available)
-    values["/Climate/ControlPending"] = int(control.get("pending") is True)
+    values[_CONTROL_ENABLED] = int(enabled)
+    values[_CONTROL_AVAILABLE] = int(available)
+    values[_CONTROL_PENDING] = int(control.get("pending") is True)
     outcome = control.get("outcome")
     if outcome in ("idle", "queued", "pending", "confirmed", "rejected", "unconfirmed"):
-        values["/Climate/ControlOutcome"] = outcome
-    values["/Climate/ControlReason"] = _token(control.get("reason"))
+        values[_CONTROL_OUTCOME] = outcome
+    values[_CONTROL_REASON] = _token(control.get("reason"))
     minimum = _number(control.get("min_c"), -100, 100)
     maximum = _number(control.get("max_c"), -100, 100)
     step = _number(control.get("step_c"), 0, 5)
@@ -390,21 +396,7 @@ class _Device:
                 }
             )
             for path, value in (metadata | self.values).items():
-                options = {}
-                if path in ("/Temperature", "/Climate/TargetTemperature"):
-                    options["gettextcallback"] = _temperature_text
-                elif path == "/Climate/EstimatedHeatingPower":
-                    options["gettextcallback"] = lambda _p, v: "" if v is None else f"{v:g} W"
-                if path in (f"{_TEMPERATURE}/Dimming", f"{_MODE}/Dimming"):
-                    if owner.command_broker is not None:
-                        if self.command_item is None:
-                            raise IntegrationError("Venus OS command item is unavailable.")
-                        options.update(
-                            writeable=True,
-                            onchangecallback=self._command,
-                            itemtype=self.command_item,
-                        )
-                service.add_path(path, value, **options)
+                service.add_path(path, value, **self._path_options(path))
             # 0xffff is the sibling drivers' generic sentinel, not an assigned
             # Victron hardware model. Never claim an actual Victron product ID.
             service.add_path(
@@ -432,6 +424,25 @@ class _Device:
             self.close()
             raise
 
+    def _path_options(self, path):
+        options = {}
+        if path in ("/Temperature", "/Climate/TargetTemperature"):
+            options["gettextcallback"] = _temperature_text
+        elif path == "/Climate/EstimatedHeatingPower":
+            options["gettextcallback"] = lambda _p, v: "" if v is None else f"{v:g} W"
+        if (
+            path in (f"{_TEMPERATURE}/Dimming", f"{_MODE}/Dimming")
+            and self.owner.command_broker is not None
+        ):
+            if self.command_item is None:
+                raise IntegrationError("Venus OS command item is unavailable.")
+            options.update(
+                writeable=True,
+                onchangecallback=self._command,
+                itemtype=self.command_item,
+            )
+        return options
+
     def _rename(self, _path, value):
         if not _name(value):
             return False
@@ -450,40 +461,18 @@ class _Device:
             or self.owner._failed
             or self.received_at is None
             or not 0 <= self.owner._clock() - self.received_at < self.owner._stale_seconds
-            or not self.values["/Climate/ControlAvailable"]
+            or not self.values[_CONTROL_AVAILABLE]
         ):
             return False
         try:
-            if path == f"{_TEMPERATURE}/Dimming":
-                if self.values[f"{_TEMPERATURE}/Status"] & _DISABLED:
-                    return False
-                target = _number(
-                    value,
-                    self.values[f"{_TEMPERATURE}/Settings/DimmingMin"],
-                    self.values[f"{_TEMPERATURE}/Settings/DimmingMax"],
-                )
-                if target is None:
-                    return False
-                # The broker validates HA's native unit/step lattice; never
-                # round a GUI request into a different temperature here.
-                accepted = broker.submit_temperature(target)
-            elif path == f"{_MODE}/Dimming":
-                if self.values[f"{_MODE}/Status"] & _DISABLED:
-                    return False
-                mode = _number(value, 0, 1)
-                if mode not in (0, 1):
-                    return False
-                accepted = broker.submit_mode("heat" if mode == 1 else "off")
-            else:
-                return False
-            if accepted is not True:
+            if self._submit_request(broker, path, value) is not True:
                 return False
             # Queued requests remain coalescible. Only a subsequent broker
             # snapshot can disable controls or confirm the observed result.
             queued = self.values | {
-                "/Climate/ControlPending": 1,
-                "/Climate/ControlOutcome": "queued",
-                "/Climate/ControlReason": "queued",
+                _CONTROL_PENDING: 1,
+                _CONTROL_OUTCOME: "queued",
+                _CONTROL_REASON: "queued",
             }
         except Exception:
             return False
@@ -494,6 +483,29 @@ class _Device:
             # not report rejection of a command that can still execute.
             self.owner._failed = True
         return True
+
+    def _submit_request(self, broker, path, value):
+        if path == f"{_TEMPERATURE}/Dimming":
+            if self.values[f"{_TEMPERATURE}/Status"] & _DISABLED:
+                return False
+            target = _number(
+                value,
+                self.values[f"{_TEMPERATURE}/Settings/DimmingMin"],
+                self.values[f"{_TEMPERATURE}/Settings/DimmingMax"],
+            )
+            if target is None:
+                return False
+            # The broker validates HA's native unit/step lattice; never round
+            # a GUI request into a different temperature here.
+            return broker.submit_temperature(target)
+        if path == f"{_MODE}/Dimming":
+            if self.values[f"{_MODE}/Status"] & _DISABLED:
+                return False
+            mode = _number(value, 0, 1)
+            if mode not in (0, 1):
+                return False
+            return broker.submit_mode("heat" if mode == 1 else "off")
+        return False
 
     def _setting_changed(self, setting, _old, value):
         if self.service is None:
@@ -544,8 +556,8 @@ class _Device:
             self.received_at is None
             or not 0 <= self.owner._clock() - self.received_at < self.owner._stale_seconds
         ):
-            values["/Climate/ControlAvailable"] = 0
-            values["/Climate/ControlReason"] = "telemetry_stale"
+            values[_CONTROL_AVAILABLE] = 0
+            values[_CONTROL_REASON] = "telemetry_stale"
             values[f"{_TEMPERATURE}/Status"] = _DISABLED
             values[f"{_MODE}/Status"] = _DISABLED
         # Control flags may change while HA I/O blocks the main thread. This
@@ -575,12 +587,12 @@ class _Device:
             | {
                 path: self.values[path]
                 for path in (
-                    "/Climate/ControlEnabled",
-                    "/Climate/ControlPending",
-                    "/Climate/ControlOutcome",
+                    _CONTROL_ENABLED,
+                    _CONTROL_PENDING,
+                    _CONTROL_OUTCOME,
                 )
             }
-            | {"/Climate/ControlReason": "telemetry_stale"}
+            | {_CONTROL_REASON: "telemetry_stale"}
         )
 
     def close(self, *, final=False):

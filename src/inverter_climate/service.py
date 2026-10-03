@@ -149,32 +149,34 @@ class Service:
             refresh=refresh,
         )
 
+    def _resolve_manual_intent(self, intent, climate) -> Decision:
+        if climate is not None and intent.confirmed(climate):
+            intent.outcome = "confirmed"
+            self._control_reason = "manual_command_confirmed"
+        elif climate is not None and intent.externally_changed(climate):
+            intent.outcome = "rejected"
+            self._control_reason = "external_change_respected"
+            self.controls.discard()
+        else:
+            elapsed = self.clock() - intent.sent_at
+            if elapsed < 0 or elapsed >= self.config.policy.confirmation_seconds:
+                if intent.outcome != "unconfirmed":
+                    intent.outcome = "unconfirmed"
+                    save_intent(self._manual_path, self.binding, intent)
+                self.controls.discard()
+            self._control_reason = "manual_command_unconfirmed_no_retry"
+            self._control_outcome = intent.outcome
+            return Decision("wait", self._control_reason)
+        self._manual_hold(climate)
+        save_intent(self._manual_path, self.binding, intent)
+        self._control_outcome = intent.outcome
+        return Decision("wait", self._control_reason)
+
     def _manual_command(self, climate, errors) -> Decision | None:
         """Resolve observation first, then consume at most one explicit request."""
         intent = self._intent
         if intent is not None and intent.outstanding:
-            if climate is not None and intent.confirmed(climate):
-                intent.outcome = "confirmed"
-                self._control_reason = "manual_command_confirmed"
-            elif climate is not None and intent.externally_changed(climate):
-                intent.outcome = "rejected"
-                self._control_reason = "external_change_respected"
-                self.controls.discard()
-            else:
-                elapsed = self.clock() - intent.sent_at
-                if elapsed < 0 or elapsed >= self.config.policy.confirmation_seconds:
-                    if intent.outcome != "unconfirmed":
-                        intent.outcome = "unconfirmed"
-                        save_intent(self._manual_path, self.binding, intent)
-                    self.controls.discard()
-                self._control_reason = "manual_command_unconfirmed_no_retry"
-                self._control_outcome = intent.outcome
-                return Decision("wait", self._control_reason)
-            self._manual_hold(climate)
-            save_intent(self._manual_path, self.binding, intent)
-            self._control_outcome = intent.outcome
-            return Decision("wait", self._control_reason)
-
+            return self._resolve_manual_intent(intent, climate)
         if self.state.phase in ("pending_boost", "pending_restore"):
             self.controls.discard()
             return None
@@ -183,14 +185,20 @@ class Service:
             return None
         self.controls.suspend()
         self._control_outcome = "rejected"
+        native, rejection = self._manual_preflight(request, climate)
+        if rejection is not None:
+            return rejection
+        return self._dispatch_manual_request(request, climate, native, errors)
+
+    def _manual_preflight(self, request, climate) -> tuple[float | str | None, Decision | None]:
         if not self.config.device.control_enabled:
             self.controls.discard()
             self._control_reason = "controls_disabled"
-            return Decision("wait", self._control_reason)
+            return None, Decision("wait", self._control_reason)
         if climate is None or not self.controls.fresh_request(request):
             self.controls.discard()
             self._control_reason = "manual_request_expired_or_unavailable"
-            return Decision("wait", self._control_reason)
+            return None, Decision("wait", self._control_reason)
         baseline = request.baseline
         if (
             climate.mode != baseline.mode
@@ -204,17 +212,20 @@ class Service:
             self.controls.discard()
             self._control_reason = "external_change_respected"
             self._manual_hold(climate)
-            return Decision("wait", self._control_reason)
+            return None, Decision("wait", self._control_reason)
         try:
             native = (
                 climate.temperature_command(request.value)
                 if request.kind == "temperature"
                 else climate.hvac_mode_command(request.value)
             )
-        except (InvalidObservation, ValueError, TypeError):
+        except (ValueError, TypeError):
             self.controls.discard()
             self._control_reason = "manual_capability_restriction"
-            return Decision("wait", self._control_reason)
+            return None, Decision("wait", self._control_reason)
+        return native, None
+
+    def _dispatch_manual_request(self, request, climate, native, errors) -> Decision:
         self.controls.suspend()
         # Preserve existing ownership until the manual intent is durable. If
         # the subsequent state write fails, recovery retains both the original

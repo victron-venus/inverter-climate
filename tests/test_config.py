@@ -30,18 +30,17 @@ def test_manual_control_requires_an_explicit_boolean(value):
 def test_manual_control_requires_native_device_publishing(tmp_path):
     with pytest.raises(ValueError, match="enabled device publisher"):
         DeviceConfig(enabled=False, control_enabled=True)
-    with pytest.raises(ValueError, match="Venus backend"):
-        Config.load(
-            write_config(
-                tmp_path,
-                """
+    path = write_config(
+        tmp_path,
+        """
 [service]
 entity_id = "climate.furnace"
 [device]
 control_enabled = true
 """,
-            )
-        )
+    )
+    with pytest.raises(ValueError, match="Venus backend"):
+        Config.load(path)
 
 
 def test_manual_control_does_not_enable_automatic_policy(tmp_path):

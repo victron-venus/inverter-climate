@@ -109,7 +109,8 @@ def test_manual_temperature_in_observe_has_durable_intent_and_observed_confirmat
         assert saved.phase == "idle"
         assert saved.hold_until > service.clock()
         status = service.controls.status()
-        assert status["pending"] and status["outcome"] == "pending"
+        assert status["pending"]
+        assert status["outcome"] == "pending"
         assert not status["available"]
 
     ha.before_post = durable_before_post
