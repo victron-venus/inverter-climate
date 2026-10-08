@@ -113,8 +113,9 @@ def test_unavailable_thermostat_is_rejected(state):
 
 
 def test_wrong_thermostat_cannot_authorize_control():
+    payload = climate_payload()
     with pytest.raises(InvalidObservation, match="identity"):
-        Climate.parse(climate_payload(), "climate.other", "°F")
+        Climate.parse(payload, "climate.other", "°F")
 
 
 @pytest.mark.parametrize(

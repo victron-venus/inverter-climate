@@ -305,8 +305,11 @@ def test_config_and_energy_require_object_responses():
         HomeAssistantClient("https://ha.example.invalid", "test-token", transport=transport),
         GatewayClient("https://gateway.example.invalid", "test-token", transport=transport),
     ]:
+        request = (
+            client.get_config if isinstance(client, HomeAssistantClient) else client.get_energy
+        )
         with pytest.raises(IntegrationError, match="invalid object response"):
-            client.get_config() if isinstance(client, HomeAssistantClient) else client.get_energy()
+            request()
         client.close()
 
 

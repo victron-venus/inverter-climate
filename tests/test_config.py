@@ -89,8 +89,9 @@ boost_delta_c = 1
     ["", "climate.*", "sensor.furnace", "climate.Furnace", "climate.furnace;climate.other", "all"],
 )
 def test_entity_must_be_one_exact_climate_id(tmp_path, entity):
+    path = write_config(tmp_path, f'[service]\nentity_id = "{entity}"\n')
     with pytest.raises(ValueError):
-        Config.load(write_config(tmp_path, f'[service]\nentity_id = "{entity}"\n'))
+        Config.load(path)
 
 
 @pytest.mark.parametrize(
@@ -108,14 +109,16 @@ def test_entity_must_be_one_exact_climate_id(tmp_path, entity):
     ],
 )
 def test_invalid_service_settings_are_rejected(tmp_path, settings):
+    path = write_config(tmp_path, '[service]\nentity_id = "climate.furnace"\n' + settings)
     with pytest.raises(ValueError):
-        Config.load(write_config(tmp_path, '[service]\nentity_id = "climate.furnace"\n' + settings))
+        Config.load(path)
 
 
 def test_unknown_sections_and_policy_keys_are_not_silently_ignored(tmp_path):
     for extra in ('\n[secret]\ntoken = "example"', "\n[policy]\nstart_sco = 90"):
+        path = write_config(tmp_path, '[service]\nentity_id = "climate.furnace"' + extra)
         with pytest.raises((ValueError, TypeError)):
-            Config.load(write_config(tmp_path, '[service]\nentity_id = "climate.furnace"' + extra))
+            Config.load(path)
 
 
 @pytest.mark.parametrize(
@@ -146,5 +149,6 @@ def test_unknown_sections_and_policy_keys_are_not_silently_ignored(tmp_path):
     ],
 )
 def test_policy_rejects_unsafe_or_mistyped_bounds(settings):
+    policy = Policy()
     with pytest.raises(ValueError):
-        replace(Policy(), **settings)
+        replace(policy, **settings)
