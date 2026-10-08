@@ -1,5 +1,5 @@
 FROM ghcr.io/astral-sh/uv:0.12.22@sha256:f513a91fc62fe7c17567eee97230dd198e43edb8a9fbecca843714a4358fe1bc AS uv
-FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d AS build
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
@@ -8,7 +8,7 @@ COPY src ./src
 # an editable install, with its source copied into the runtime image below.
 RUN uv sync --frozen --no-dev --no-build --python /usr/local/bin/python
 
-FROM python:3.12-slim@sha256:02108f5d322dd89f1c9e552442c25acb0543dfdbc455693a5599624f20d9155d
+FROM python:3.12-slim@sha256:05cda9777409a9c3ffddd94a4c476b79f0769a0b4857f0c7ed9226b6800b0d6f
 RUN groupadd --gid 10001 climate && useradd --uid 10001 --gid climate --no-create-home climate \
     && mkdir /data && chown climate:climate /data
 WORKDIR /app
