@@ -140,7 +140,9 @@ Private environment variables:
 Base URLs must be origins, optionally ending in `/`; proxy path prefixes are not
 supported in this version. HTTPS certificate validation stays enabled, redirects
 are rejected and environment proxies are ignored. HTTP is supported for a trusted
-local network. Tokens are sent only to the explicitly configured origin.
+local network. Tokens are sent only to the explicitly configured origin. The same
+TLS connection also checks every verified certificate, including its trust
+anchor, against the documented [public-key minimums](docs/tls-policy.md).
 
 ## Policy
 
