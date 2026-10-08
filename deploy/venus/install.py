@@ -18,6 +18,7 @@ END = "# === end inverter-climate ==="
 RUNTIME = "/data/inverter-climate-runtime/current"
 BOOT = START + f"\npython3 -B {RUNTIME}/deploy/venus/install.py boot\n" + END + "\n"
 MARKER = "inverter-climate-native-v1\n"
+OWNER_FILE = ".owner"
 
 
 def atomic_write(path, content, mode=0o600):
@@ -74,13 +75,8 @@ def persistence(text, enabled):
     return "".join(lines)
 
 
-def validate_bundle(bundle):
-    """Require the exact checksummed payload, regular files, and pure Python wheels."""
-    if bundle.is_symlink() or not bundle.is_dir():
-        raise ValueError("Bundle must be an ordinary directory")
-    manifest = bundle / "SHA256SUMS"
-    if not manifest.is_file() or manifest.is_symlink():
-        raise ValueError("A checksummed native bundle is required")
+def _manifest_checksums(manifest):
+    """Read ordered checksum entries before walking the package."""
     expected = {}
     for line in manifest.read_text().splitlines():
         digest, name = line.split("  ", 1)
@@ -94,6 +90,11 @@ def validate_bundle(bundle):
         ):
             raise ValueError("Invalid bundle manifest")
         expected[name] = digest
+    return expected
+
+
+def _bundle_files(bundle, manifest, expected):
+    """Validate each encountered file before returning its manifest name."""
     actual = set()
     for path in bundle.rglob("*"):
         if path.is_symlink() or (not path.is_file() and not path.is_dir()):
@@ -117,6 +118,18 @@ def validate_bundle(bundle):
             or magic[:2] == b"MZ"
         ):
             raise ValueError("Native binaries and bytecode are not portable Venus dependencies")
+    return actual
+
+
+def validate_bundle(bundle):
+    """Require the exact checksummed payload, regular files, and pure Python wheels."""
+    if bundle.is_symlink() or not bundle.is_dir():
+        raise ValueError("Bundle must be an ordinary directory")
+    manifest = bundle / "SHA256SUMS"
+    if not manifest.is_file() or manifest.is_symlink():
+        raise ValueError("A checksummed native bundle is required")
+    expected = _manifest_checksums(manifest)
+    actual = _bundle_files(bundle, manifest, expected)
     if actual != expected.keys():
         raise ValueError("Bundle files do not match the manifest")
     required = {
@@ -163,8 +176,8 @@ class Installer:
         if self.definition.is_symlink() or (
             self.definition.exists()
             and (
-                not (self.definition / ".owner").is_file()
-                or (self.definition / ".owner").read_text() != MARKER
+                not (self.definition / OWNER_FILE).is_file()
+                or (self.definition / OWNER_FILE).read_text() != MARKER
             )
         ):
             raise ValueError("Refusing to replace an unrecognized persistent service definition")
@@ -191,7 +204,7 @@ class Installer:
 
     def register(self, enabled):
         self.definition.mkdir(parents=True, exist_ok=True)
-        atomic_write(self.definition / ".owner", MARKER)
+        atomic_write(self.definition / OWNER_FILE, MARKER)
         for source, destination in (("run", "run"), ("log-run", "log/run")):
             content = (self.current / "deploy/venus" / source).read_text()
             # A migrated 0.2 bundle remains checksummed and unchanged. Render
@@ -256,9 +269,8 @@ class Installer:
         self.stop()
         self.register(enabled)
 
-    def install(self, bundle, start):
-        validate_bundle(bundle)
-        self.check_ownership()
+    def _validate_install_source(self, bundle):
+        """Reject unsafe or interrupted source layouts before changing storage."""
         if os.path.lexists(self.rollback_temporary) or (
             not self.current.exists() and self.previous.exists()
         ):
@@ -270,12 +282,9 @@ class Installer:
                 validate_bundle(existing)
         if bundle.resolve() in (self.current, self.previous):
             raise ValueError("Install from a separate extracted bundle")
-        was_enabled = self.definition.exists() and not (self.definition / "down").exists()
-        enabled = start or was_enabled
-        if enabled and not all(
-            (self.options / name).is_file() for name in ("config.toml", "environment")
-        ):
-            raise ValueError("Configure private config.toml and environment before --start")
+
+    def _check_install_runtime(self, bundle):
+        """Probe target imports only for an actual device installation."""
         if not self.offline:
             if sys.version_info < (3, 12):  # noqa: UP036 - executed directly on target firmware
                 raise ValueError("Venus OS must provide Python 3.12 or newer")
@@ -298,18 +307,28 @@ class Installer:
                 check=True,
                 capture_output=True,
             )
-        self.current.parent.mkdir(parents=True, exist_ok=True)
-        if not self.current.exists() and (self.legacy / "SHA256SUMS").is_file():
-            self.copy_legacy_bundle()
-        if (
-            self.current.exists()
-            and (self.current / "SHA256SUMS").read_bytes() == (bundle / "SHA256SUMS").read_bytes()
-        ):
-            # Reinstall after firmware replacement must restore registration,
-            # without replacing a useful previous release with the same bytes.
-            self.prepare_options()
-            self.register(enabled)
-            return
+
+    def _recover_install(self, staged, had_current, was_enabled):
+        """Retain the existing recoverable promotion and re-registration order."""
+        try:
+            if had_current and not staged.exists() and self.previous.exists():
+                # The final rename may have succeeded before its fsync
+                # failed. Restore the prior version through the same
+                # recoverable swap used by an explicit rollback.
+                self.rollback()
+            elif not self.current.exists() and self.previous.exists():
+                move_bundle(self.previous, self.current)
+            if self.current.exists():
+                self.register(was_enabled)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery:
+            raise RuntimeError(
+                "Promotion failed and recovery is incomplete; run rollback from an "
+                "extracted package or "
+                "inverter-climate-runtime/previous/deploy/venus/install.py"
+            ) from recovery
+
+    def _promote_bundle(self, bundle, was_enabled):
+        """Stage validated bytes, promote them, and recover the prior bundle on failure."""
         staged = Path(tempfile.mkdtemp(prefix=".inverter-climate-stage-", dir=self.current.parent))
         stopped = False
         had_current = self.current.exists()
@@ -325,27 +344,52 @@ class Installer:
             move_bundle(staged, self.current)
         except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
             if stopped:
-                try:
-                    if had_current and not staged.exists() and self.previous.exists():
-                        # The final rename may have succeeded before its fsync
-                        # failed. Restore the prior version through the same
-                        # recoverable swap used by an explicit rollback.
-                        self.rollback()
-                    elif not self.current.exists() and self.previous.exists():
-                        move_bundle(self.previous, self.current)
-                    if self.current.exists():
-                        self.register(was_enabled)
-                except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery:
-                    raise RuntimeError(
-                        "Promotion failed and recovery is incomplete; run rollback from an "
-                        "extracted package or "
-                        "inverter-climate-runtime/previous/deploy/venus/install.py"
-                    ) from recovery
+                self._recover_install(staged, had_current, was_enabled)
             raise error
         finally:
             # Retain the prepared bundle if even restoring the old copy failed.
             if staged.exists() and (not stopped or self.current.exists()):
                 shutil.rmtree(staged)
+
+    def _recover_rollback(self, enabled):
+        """Restore interrupted swaps without discarding either recoverable bundle."""
+        try:
+            # If the old target has not moved yet, abort back to the version
+            # running before this rollback. Otherwise keep the recovered
+            # current version and leave the temporary copy for completion.
+            if not self.current.exists() and self.rollback_temporary.exists():
+                move_bundle(self.rollback_temporary, self.current)
+            if self.current.exists():
+                self.register(enabled)
+        except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery:
+            raise RuntimeError(
+                "Rollback recovery is incomplete; preserve all bundle copies"
+            ) from recovery
+
+    def install(self, bundle, start):
+        validate_bundle(bundle)
+        self.check_ownership()
+        self._validate_install_source(bundle)
+        was_enabled = self.definition.exists() and not (self.definition / "down").exists()
+        enabled = start or was_enabled
+        if enabled and not all(
+            (self.options / name).is_file() for name in ("config.toml", "environment")
+        ):
+            raise ValueError("Configure private config.toml and environment before --start")
+        self._check_install_runtime(bundle)
+        self.current.parent.mkdir(parents=True, exist_ok=True)
+        if not self.current.exists() and (self.legacy / "SHA256SUMS").is_file():
+            self.copy_legacy_bundle()
+        if (
+            self.current.exists()
+            and (self.current / "SHA256SUMS").read_bytes() == (bundle / "SHA256SUMS").read_bytes()
+        ):
+            # Reinstall after firmware replacement must restore registration,
+            # without replacing a useful previous release with the same bytes.
+            self.prepare_options()
+            self.register(enabled)
+            return
+        self._promote_bundle(bundle, was_enabled)
         self.prepare_options()
         self.register(enabled)
 
@@ -391,18 +435,7 @@ class Installer:
             if temporary:
                 move_bundle(self.rollback_temporary, self.previous)
         except (OSError, ValueError) as error:
-            try:
-                # If the old target has not moved yet, abort back to the version
-                # running before this rollback. Otherwise keep the recovered
-                # current version and leave the temporary copy for completion.
-                if not self.current.exists() and self.rollback_temporary.exists():
-                    move_bundle(self.rollback_temporary, self.current)
-                if self.current.exists():
-                    self.register(enabled)
-            except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as recovery:
-                raise RuntimeError(
-                    "Rollback recovery is incomplete; preserve all bundle copies"
-                ) from recovery
+            self._recover_rollback(enabled)
             raise error
         self.register(enabled)
 
