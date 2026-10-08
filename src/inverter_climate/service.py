@@ -294,7 +294,9 @@ class Service:
             units.get("temperature"),
         )
 
-    def _preflight_command(self, decision, climate, energy, before, release, errors):
+    def _preflight_command(self, decision, previous_climate, energy, before, release, errors):
+        """Keep the latest completed climate read when preflight cannot finish."""
+        climate = previous_climate
         try:
             if decision.action == "boost" and not release:
                 raw = self.gateway.get_energy()
