@@ -10,7 +10,7 @@ and GLib bindings, `velib_python` (`vedbus` and `settingsdevice`) at
 `/opt/victronenergy/dbus-systemcalc-py/ext/velib_python`, and Venus daemontools.
 These imports are checked before an update stops the current service.
 The bundle contains locked, architecture-independent
-Python HTTP dependencies. It does not change the firmware Python environment;
+Python HTTP and ASN.1 certificate-metadata dependencies. It does not change the firmware Python environment;
 Raspberry Pi 3 and Cerbo use the same pure Python payload. The lifecycle has been
 checked against SetupHelper 9.3.
 

@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import httpx
 
+from .tls_policy import verified_context
+
 MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 _CLIMATE_ENTITY = re.compile(r"climate\.[a-z0-9_]+", flags=re.ASCII)
 
@@ -111,7 +113,7 @@ class _JsonClient:
             },
             timeout=timeout_seconds,
             transport=transport,
-            verify=True,
+            verify=verified_context() if transport is None else True,
             follow_redirects=False,
             trust_env=False,
         )
