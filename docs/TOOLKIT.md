@@ -10,3 +10,5 @@ changes are backported from [toolkit ba1e3e7](https://github.com/victron-venus/v
 
 The repository-specific imports, type annotations, policy and workflow inputs
 remain authoritative; this is not a full generator upgrade.
+
+Additional helper maintenance was ported from reviewed [toolkit source 0613931](https://github.com/victron-venus/venus-os-ci-toolkit/tree/0613931b412bf69abc6ebfe0fd11d03175eb57dc/scripts), proposed in [toolkit PR 125](https://github.com/victron-venus/venus-os-ci-toolkit/pull/125), which was pending upstream merge when this port was prepared. Use a set for membership-only preparation checks and remove the redundant VersionError catch already covered by ValueError.
