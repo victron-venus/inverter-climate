@@ -157,3 +157,53 @@ def test_daemon_publishes_but_foreground_probes_and_release_do_not(config, monke
     monkeypatch.setattr(module, "make_device_publisher", lambda *_: Publisher())
     assert main() == 0
     assert events == ([] if command else ["start", "health", "publish", "close"])
+
+
+@pytest.mark.parametrize("failure", ["health", "tick", "publish"])
+def test_daemon_failure_closes_publisher_before_clients(config, monkeypatch, failure, capsys):
+    from inverter_climate import service as module
+    from inverter_climate.clients import IntegrationError
+
+    events = []
+
+    def operation(name):
+        events.append(name)
+        if name == failure:
+            raise IntegrationError("private fixture endpoint")
+
+    result = {"mode": "observe"}
+    publisher = SimpleNamespace(
+        start=lambda: operation("start"),
+        check_health=lambda: operation("health"),
+        publish=lambda _: operation("publish"),
+        close=lambda: operation("publisher_close"),
+    )
+    service = SimpleNamespace(
+        controls=SimpleNamespace(wake=lambda: None),
+        tick=lambda **_: operation("tick") or result,
+    )
+    monkeypatch.setenv("HA_BASE_URL", "http://example.test")
+    monkeypatch.setenv("HA_TOKEN", "example-token")
+    monkeypatch.setattr(sys, "argv", ["inverter-climate"])
+    monkeypatch.setattr(module.Config, "load", lambda _: config)
+    monkeypatch.setattr(module, "Service", lambda *args, **kwargs: service)
+    monkeypatch.setattr(module.signal, "signal", lambda *_: None)
+    monkeypatch.setattr(
+        module,
+        "HomeAssistantClient",
+        lambda *_: SimpleNamespace(close=lambda: operation("ha_close")),
+    )
+    monkeypatch.setattr(
+        module,
+        "make_energy_client",
+        lambda _: SimpleNamespace(close=lambda: operation("gateway_close")),
+    )
+    monkeypatch.setattr(module, "make_device_publisher", lambda *_: publisher)
+    assert main() == 2
+    boundary = ["start", "health", "tick", "publish"]
+    assert events == boundary[: boundary.index(failure) + 1] + [
+        "publisher_close",
+        "gateway_close",
+        "ha_close",
+    ]
+    assert "private fixture endpoint" not in capsys.readouterr().err

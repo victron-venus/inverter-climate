@@ -1137,3 +1137,25 @@ def test_temperature_unit_subscription_is_read_only_and_recovers_settings_owner(
     unit.close()
     assert imports[-1].closed
     assert removed == [True]
+
+
+@pytest.mark.parametrize("value", ["temperature:1١", "temperature:2５", "temperature:2𝟝"])
+def test_device_instance_rejects_non_ascii_suffix_digits(value):
+    from inverter_climate.dbus_device import _instance
+
+    assert _instance(value) is None
+
+
+def test_dispatch_keeps_glib_timer_contract_when_publication_fails(running):
+    runtime, publisher = running
+    results = []
+
+    def fail_during_callback():
+        runtime.services[0].failure = RuntimeError("private fixture error")
+        publisher.publish(status())
+        results.append(runtime.glib.callback())
+
+    runtime.glib.invoke(fail_during_callback)
+    assert results == [True]
+    with pytest.raises(IntegrationError, match="unavailable"):
+        publisher.check_health()

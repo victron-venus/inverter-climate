@@ -258,3 +258,27 @@ def test_existing_journal_identity_cannot_control_another_thermostat(setup_servi
     with pytest.raises(ValueError):
         Service(service.config, ha, gateway, "example-binding")
     assert not ha.calls
+
+
+def test_invalid_second_energy_read_retains_fresh_climate_without_command(setup_service):
+    service, ha, gateway = setup_service
+    original = gateway.get_energy
+    reads = 0
+
+    def energy():
+        nonlocal reads
+        reads += 1
+        if reads == 2:
+            ha.target = 18
+            return {}
+        return original()
+
+    gateway.get_energy = energy
+    result = service.tick()
+    assert reads == 2
+    assert result["climate"]["target_c"] == 18
+    assert result["decision"]["reason"] == "command_preflight_failed"
+    assert result["errors"] == ["command_preflight_failed"]
+    assert service.state.phase == "idle"
+    assert service.state.surplus_since is None
+    assert not ha.calls

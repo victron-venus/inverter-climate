@@ -96,7 +96,7 @@ def _name(value: Any) -> bool:
 
 
 def _instance(value: Any) -> int | None:
-    if isinstance(value, str) and re.fullmatch(r"temperature:(0|[1-9][0-9]{0,2})", value):
+    if isinstance(value, str) and re.fullmatch(r"temperature:(0|[1-9]\d{0,2})", value, re.ASCII):
         result = int(value.partition(":")[2])
         return result if result <= 255 else None
     return None
@@ -700,6 +700,43 @@ class DbusDevicePublisher:
             # unbounded backlog or replay old temperatures after recovery.
             self._pending = (self._clock(), snapshot)
 
+    def _make_dispatch(self, device, loop, last_update, last_connected, stale):
+        def dispatch():
+            nonlocal last_update, last_connected, stale
+            try:
+                if self._stop.is_set() or self._failed:
+                    loop.quit()
+                    return True
+                with self._lock:
+                    pending, self._pending = self._pending, None
+                if pending is not None:
+                    last_update, values = pending
+                    if self._clock() - last_update < self._stale_seconds:
+                        device.update(values, last_update)
+                        if values[DBUS_CONNECTED_PATH]:
+                            last_connected = last_update
+                        stale = False
+                device.refresh_controls()
+                if (
+                    last_update is not None
+                    and self._clock() - last_update >= self._stale_seconds
+                    and not stale
+                ):
+                    device.invalidate()
+                    stale = True
+                if self._clock() - last_connected >= self._stale_seconds:
+                    # A vanished direct counterpart should disappear from
+                    # Venus. Keep only the observer/settings subscription so
+                    # a fresh observation can re-announce the same device.
+                    device.close()
+                return True
+            except Exception:
+                self._failed = True
+                loop.quit()
+                return True
+
+        return dispatch
+
     def _run(self):
         bus = device = glib = None
         timer = None
@@ -723,39 +760,7 @@ class DbusDevicePublisher:
 
             bus.call_on_disconnection(disconnected)
 
-            def dispatch():
-                nonlocal last_update, last_connected, stale
-                try:
-                    if self._stop.is_set() or self._failed:
-                        loop.quit()
-                        return True
-                    with self._lock:
-                        pending, self._pending = self._pending, None
-                    if pending is not None:
-                        last_update, values = pending
-                        if self._clock() - last_update < self._stale_seconds:
-                            device.update(values, last_update)
-                            if values[DBUS_CONNECTED_PATH]:
-                                last_connected = last_update
-                            stale = False
-                    device.refresh_controls()
-                    if (
-                        last_update is not None
-                        and self._clock() - last_update >= self._stale_seconds
-                        and not stale
-                    ):
-                        device.invalidate()
-                        stale = True
-                    if self._clock() - last_connected >= self._stale_seconds:
-                        # A vanished direct counterpart should disappear from
-                        # Venus. Keep only the observer/settings subscription so
-                        # a fresh observation can re-announce the same device.
-                        device.close()
-                    return True
-                except Exception:
-                    self._failed = True
-                    loop.quit()
-                    return True
+            dispatch = self._make_dispatch(device, loop, last_update, last_connected, stale)
 
             timer = glib.timeout_add(1000, dispatch)
             self._ready.set()
