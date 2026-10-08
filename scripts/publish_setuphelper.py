@@ -25,19 +25,20 @@ from release_control import GitHub, ReleaseError, require
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = "latest"
 PACKAGE = "inverter-climate"
+LATEST_RELEASE_PATH = "releases/latest"
 
 
 class SetupHelperGitHub(GitHub):
     """Add only the stable-channel lookup to the shared provenance transport."""
 
     def request(self, path: str, method="GET", body=None, mode="json") -> bytes:
-        if path != "releases/latest":
+        if path != LATEST_RELEASE_PATH:
             return super().request(path, method, body, mode)
         require(
             method == "GET" and body is None and mode == "json",
             "Latest stable release lookup is read-only JSON",
         )
-        endpoint = f"{self.base}/releases/latest"
+        endpoint = f"{self.base}/{LATEST_RELEASE_PATH}"
         return self.response(
             subprocess.run(
                 ["gh", "api", "--hostname", "github.com", "--method", "GET", "--", endpoint],
@@ -50,7 +51,7 @@ class SetupHelperGitHub(GitHub):
 
 def version_tuple(value: str) -> tuple[int, int, int]:
     require(
-        bool(re.fullmatch(r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", value)),
+        bool(re.fullmatch(r"v(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)", value, re.ASCII)),
         "SetupHelper publication requires a stable package version",
     )
     return tuple(int(part) for part in value[1:].split("."))
@@ -188,7 +189,7 @@ def publish_tree(
 
 def publish(repository: str, requested_tag: str, *, execute: bool):
     gh = SetupHelperGitHub(repository)
-    latest = gh.optional("releases/latest")
+    latest = gh.optional(LATEST_RELEASE_PATH)
     if latest is None and not requested_tag:
         print("No stable release is available; SetupHelper publication skipped")
         return
@@ -206,7 +207,7 @@ def publish(repository: str, requested_tag: str, *, execute: bool):
         archive = assets / f"inverter-climate-{manifest['version']}.tar.gz"
         require(archive.is_file(), "Verified release is missing its native package archive")
         package = extract_package(archive, directory / "extracted")
-        current_latest = gh.api("releases/latest")
+        current_latest = gh.api(LATEST_RELEASE_PATH)
         require(
             current_latest.get("id") == latest.get("id") and current_latest.get("tag_name") == tag,
             "Latest stable release changed during verification",
