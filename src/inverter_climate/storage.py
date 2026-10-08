@@ -40,6 +40,26 @@ def atomic_json(path: Path, payload: dict):
             os.unlink(temporary)
 
 
+def _validate_state_fields(state: State) -> None:
+    """Validate the persisted field types before checking ownership bounds."""
+    strings = {"phase", "observed_mode", "observed_preset"}
+    nullable = {"baseline_c", "boosted_c", "surplus_since", "observed_target_c"}
+    for field in fields(State):
+        value = getattr(state, field.name)
+        if field.name in strings:
+            if value is not None and not isinstance(value, str):
+                raise ValueError("invalid journal string")
+            continue
+        if value is None and field.name in nullable:
+            continue
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+        ):
+            raise ValueError("invalid journal number")
+
+
 def load_state(path: Path, binding: str) -> State:
     if not path.exists():
         return State()
@@ -59,30 +79,14 @@ def load_state(path: Path, binding: str) -> State:
         state = State(**raw)
         if state.phase not in ("idle", "pending_boost", "boosted", "pending_restore"):
             raise ValueError("invalid state journal phase")
-        strings = {"phase", "observed_mode", "observed_preset"}
-        nullable = {"baseline_c", "boosted_c", "surplus_since", "observed_target_c"}
-        for field in fields(State):
-            value = getattr(state, field.name)
-            if field.name in strings:
-                if value is not None and not isinstance(value, str):
-                    raise ValueError("invalid journal string")
-                continue
-            if value is None and field.name in nullable:
-                continue
-            if (
-                isinstance(value, bool)
-                or not isinstance(value, (int, float))
-                or not math.isfinite(value)
-            ):
-                raise ValueError("invalid journal number")
-        if state.phase != "idle":
-            if (
-                state.baseline_c is None
-                or state.boosted_c is None
-                or not 5 <= state.baseline_c < state.boosted_c <= 32
-                or state.boosted_c - state.baseline_c > 2.01
-            ):
-                raise ValueError("invalid journal ownership")
+        _validate_state_fields(state)
+        if state.phase != "idle" and (
+            state.baseline_c is None
+            or state.boosted_c is None
+            or not 5 <= state.baseline_c < state.boosted_c <= 32
+            or state.boosted_c - state.baseline_c > 2.01
+        ):
+            raise ValueError("invalid journal ownership")
         return state
     except (KeyError, TypeError, AttributeError, json.JSONDecodeError) as exc:
         raise ValueError("invalid state journal; inspect before resetting") from exc

@@ -151,7 +151,7 @@ class _JsonClient:
                     chunks.extend(chunk)
                 try:
                     return json.loads(chunks, parse_constant=_reject_nonfinite_json)
-                except (ValueError, UnicodeError, RecursionError):
+                except (ValueError, RecursionError):
                     raise IntegrationError(f"{self._label} returned invalid JSON.") from None
         except httpx.HTTPError:
             raise IntegrationError(f"{self._label} request failed or timed out.") from None
