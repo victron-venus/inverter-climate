@@ -121,13 +121,39 @@ def test_boot_recreates_only_own_service_link_without_enabling_down_service(setu
     assert (native.definition / "down").is_file()
 
 
-@pytest.mark.parametrize("ending", ["exit 0\n", "exit 0;\n", "exit 0 # finished\n"])
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "exit 0\n",
+        "exit 0;\n",
+        "exit 0 # finished\n",
+        " \texit\t0 \t;\t # finished\r\n",
+        "exit 0;# finished\n",
+    ],
+)
 def test_rc_local_preserves_shebang_other_blocks_and_terminal_exit(ending):
     original = "#!/bin/sh\n# Other service\nif true; then\n  echo existing\nfi\n" + ending
     added = installer.persistence(original, True)
     assert added.startswith("#!/bin/sh\n")
-    assert added.index(installer.BOOT) < added.index("exit 0")
+    assert added.index(installer.BOOT) < added.index(ending)
     assert added.count(installer.START) == 1
+    assert installer.persistence(added, True) == added
+    assert installer.persistence(added, False) == original
+
+
+@pytest.mark.parametrize(
+    "ending",
+    [
+        "exit 00\n",
+        "exit 0;;\n",
+        "exit 0; echo keep\n",
+        "exit 0" + " \t" * 100_000 + "unexpected\n",
+    ],
+)
+def test_non_terminal_exit_is_preserved_before_the_new_hook(ending):
+    original = "#!/bin/sh\n" + ending
+    added = installer.persistence(original, True)
+    assert added == original + installer.BOOT
     assert installer.persistence(added, True) == added
     assert installer.persistence(added, False) == original
 
