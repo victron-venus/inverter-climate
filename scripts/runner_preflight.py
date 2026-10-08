@@ -419,7 +419,6 @@ def main(argv=None):
         )
     except (
         rc.ReleaseError,
-        version_plan.VersionError,
         OSError,
         ValueError,
         KeyError,
