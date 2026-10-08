@@ -65,7 +65,7 @@ def persistence(text, enabled):
     ]
     insertion = len(lines)
     if meaningful and re.fullmatch(
-        r"[ \t]*exit[ \t]+0[ \t]*;?[ \t]*(?:#[^\n]*)?(?:\r?\n)?", lines[meaningful[-1]]
+        r"[ \t]*exit[ \t]+0[ \t]*(?:;[ \t]*)?(?:#[^\n]*)?(?:\r?\n)?", lines[meaningful[-1]]
     ):
         insertion = meaningful[-1]
     if insertion and not lines[insertion - 1].endswith("\n"):

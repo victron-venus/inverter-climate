@@ -8,6 +8,7 @@ Coordinates climate setpoints with measured energy through Home Assistant and Ve
 
 ### Maintenance
 
+- Keep native installer terminal-exit detection linear for long whitespace-heavy `rc.local` lines while preserving existing shell text and hook placement.
 - Publish reviewed release notes from the exact source commit used to build each candidate, preserving build provenance.
 - Document contribution checks, confidential security reporting and the project-specific trust boundaries.
 
