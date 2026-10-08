@@ -294,8 +294,9 @@ def test_verified_chain_api_and_malformed_bounds(chains):
         )
         with pytest.raises(ssl.SSLError, match="key policy"):
             policy.verify_key_lengths(connection)
+    connection = SimpleNamespace(context=context)
     with pytest.raises(ssl.SSLError, match="key policy"):
-        policy.verify_key_lengths(SimpleNamespace(context=context))
+        policy.verify_key_lengths(connection)
 
 
 def test_context_preserves_default_policy_and_is_not_shared(monkeypatch):
@@ -360,5 +361,6 @@ def test_unverified_socket_is_rejected():
     context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     context.check_hostname = False
     context.verify_mode = ssl.CERT_NONE
+    connection = SimpleNamespace(context=context)
     with pytest.raises(ssl.SSLError, match="key policy"):
-        policy.verify_key_lengths(SimpleNamespace(context=context))
+        policy.verify_key_lengths(connection)

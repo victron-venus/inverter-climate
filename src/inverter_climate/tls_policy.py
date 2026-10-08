@@ -13,11 +13,12 @@ import httpx
 from pyasn1.codec.der.decoder import decode
 from pyasn1.error import PyAsn1Error
 from pyasn1.type import univ
-from pyasn1_modules import rfc3279, rfc5280, rfc5480, rfc8017
+from pyasn1_modules import rfc3279, rfc5280, rfc5480, rfc8017, rfc8410
 
 MAX_CERTIFICATE_BYTES = 64 * 1024
 MAX_CHAIN_CERTIFICATES = 16
 _RSA = {"1.2.840.113549.1.1.1", "1.2.840.113549.1.1.10"}
+_EDWARDS_KEY_BYTES = {str(rfc8410.id_Ed25519): 32, str(rfc8410.id_Ed448): 57}
 _NAMED_CURVE_BITS = {
     "1.2.840.10045.3.1.1": 192,  # secp192r1
     "1.3.132.0.33": 224,  # secp224r1
@@ -70,8 +71,8 @@ def _strong_public_key(info) -> bool:
         )
     if algorithm == "1.2.840.10040.4.1":
         return _strong_dsa(key, parameters.asOctets())
-    if algorithm in {"1.3.101.112", "1.3.101.113"}:
-        return not parameters.hasValue() and len(key) == (32 if algorithm.endswith("112") else 57)
+    if algorithm in _EDWARDS_KEY_BYTES:
+        return not parameters.hasValue() and len(key) == _EDWARDS_KEY_BYTES[algorithm]
     return False
 
 
@@ -79,6 +80,16 @@ def certificate_key_is_strong(der: bytes) -> bool:
     """Read the complete X.509 schema and its public key, never unverified ASN.1 guesses."""
     certificate = _decode_complete(der, rfc5280.Certificate())
     return _strong_public_key(certificate["tbsCertificate"]["subjectPublicKeyInfo"])
+
+
+def _certificate_der(certificate) -> bytes:
+    """Normalize current DER and older CPython PEM verified-chain representations."""
+    if isinstance(certificate, bytes):
+        return certificate
+    pem = certificate.public_bytes()
+    if not isinstance(pem, str) or len(pem) > MAX_CERTIFICATE_BYTES * 2:
+        raise ValueError("Invalid verified certificate representation")
+    return ssl.PEM_cert_to_DER_cert(pem)
 
 
 def verify_key_lengths(connection: ssl.SSLSocket) -> None:
@@ -97,13 +108,7 @@ def verify_key_lengths(connection: ssl.SSLSocket) -> None:
         if not isinstance(chain, (list, tuple)) or not 0 < len(chain) <= MAX_CHAIN_CERTIFICATES:
             raise ValueError("Verified certificate chain exceeds supported bounds")
         for certificate in chain:
-            if isinstance(certificate, bytes):
-                der = certificate
-            else:
-                pem = certificate.public_bytes()
-                if not isinstance(pem, str) or len(pem) > MAX_CERTIFICATE_BYTES * 2:
-                    raise ValueError("Invalid verified certificate representation")
-                der = ssl.PEM_cert_to_DER_cert(pem)
+            der = _certificate_der(certificate)
             if not certificate_key_is_strong(der):
                 raise ValueError("Verified certificate key is below the required size")
     except (AttributeError, TypeError, ValueError, PyAsn1Error, RecursionError):
