@@ -294,6 +294,40 @@ class Service:
             units.get("temperature"),
         )
 
+    def _preflight_command(self, decision, previous_climate, energy, before, release, errors):
+        """Keep the latest completed climate read when preflight cannot finish."""
+        climate = previous_climate
+        try:
+            if decision.action == "boost" and not release:
+                raw = self.gateway.get_energy()
+            climate = self.read_climate()
+            if decision.action == "boost" and not release:
+                energy = Energy.parse(raw, self.clock(), self.config.policy.max_energy_age_seconds)
+        except (IntegrationError, InvalidObservation):
+            self.state = before
+            self.state.surplus_since = None
+            decision = Decision("wait", "command_preflight_failed")
+            errors.append("command_preflight_failed")
+        else:
+            self.state = copy.deepcopy(before)
+            decision = evaluate(
+                self.state, climate, energy, self.config.policy, self.clock(), active=True
+            )
+        return decision, climate, energy
+
+    def _checkpoint_state(self, decision):
+        signature = journal_signature(self.state)
+        now = self.clock()
+        checkpoint = self.state.phase != "idle" and (
+            now - self._last_saved_at >= 60 or now < self._last_saved_at
+        )
+        if (
+            signature != self._saved_signature
+            or checkpoint
+            or decision.action in ("boost", "restore")
+        ):
+            self._save_state()
+
     def tick(self, *, release: bool = False) -> dict:
         climate = None
         energy = None
@@ -323,24 +357,9 @@ class Service:
             # Recheck the actual target/mode immediately before writing. HA/Nest
             # has no compare-and-set API: an external change after this read is
             # still a possible race, documented rather than hidden.
-            try:
-                if decision.action == "boost" and not release:
-                    raw = self.gateway.get_energy()
-                climate = self.read_climate()
-                if decision.action == "boost" and not release:
-                    energy = Energy.parse(
-                        raw, self.clock(), self.config.policy.max_energy_age_seconds
-                    )
-            except (IntegrationError, InvalidObservation):
-                self.state = before
-                self.state.surplus_since = None
-                decision = Decision("wait", "command_preflight_failed")
-                errors.append("command_preflight_failed")
-            else:
-                self.state = copy.deepcopy(before)
-                decision = evaluate(
-                    self.state, climate, energy, self.config.policy, self.clock(), active=True
-                )
+            decision, climate, energy = self._preflight_command(
+                decision, climate, energy, before, release, errors
+            )
         if decision.action in ("boost", "restore") and self.controls.suspend():
             # A request accepted during the HA preflight has manual priority.
             self.state = before
@@ -348,17 +367,7 @@ class Service:
         # A failure here stops the process before a command is sent. Preserve
         # ownership/manual changes immediately; checkpoint owned boosts every
         # minute, while unchanged observation leaves persistent flash untouched.
-        signature = journal_signature(self.state)
-        now = self.clock()
-        checkpoint = self.state.phase != "idle" and (
-            now - self._last_saved_at >= 60 or now < self._last_saved_at
-        )
-        if (
-            signature != self._saved_signature
-            or checkpoint
-            or decision.action in ("boost", "restore")
-        ):
-            self._save_state()
+        self._checkpoint_state(decision)
         if decision.action in ("boost", "restore"):
             self._update_controls(climate, refresh=False)
             try:
@@ -383,6 +392,29 @@ class Service:
         }
         atomic_json(self.config.status_path, result)
         return result
+
+
+def _poll_service(service, publisher, args, stop):
+    while not stop.is_set():
+        if publisher is not None:
+            publisher.check_health()
+        result = service.tick(release=args.release)
+        if publisher is not None:
+            publisher.publish(result)
+        # Logs omit entity identity, endpoints and credentials.
+        print(
+            json.dumps(
+                {
+                    key: result[key]
+                    for key in ("generated_at", "mode", "phase", "decision", "errors")
+                }
+            ),
+            flush=True,
+        )
+        if args.once or (args.release and service.state.phase == "idle"):
+            return 1 if result["errors"] or (args.release and service.manual_outstanding) else 0
+        service.controls.wait(service.next_poll_seconds())
+    return 0
 
 
 def main() -> int:
@@ -428,29 +460,7 @@ def main() -> int:
                 publisher = make_device_publisher(config, binding, service.controls)
                 if publisher is not None:
                     publisher.start()
-            while not stop.is_set():
-                if publisher is not None:
-                    publisher.check_health()
-                result = service.tick(release=args.release)
-                if publisher is not None:
-                    publisher.publish(result)
-                # Logs omit entity identity, endpoints and credentials.
-                print(
-                    json.dumps(
-                        {
-                            key: result[key]
-                            for key in ("generated_at", "mode", "phase", "decision", "errors")
-                        }
-                    ),
-                    flush=True,
-                )
-                if args.once or (args.release and service.state.phase == "idle"):
-                    return (
-                        1
-                        if result["errors"] or (args.release and service.manual_outstanding)
-                        else 0
-                    )
-                service.controls.wait(service.next_poll_seconds())
+            return _poll_service(service, publisher, args, stop)
         return 0
     except (ValueError, OSError, IntegrationError) as exc:
         # Untrusted exceptions can embed paths/URLs/response bodies. Never dump
