@@ -313,8 +313,9 @@ def test_failed_firmware_preflight_keeps_existing_package_running(setup, tmp_pat
         raise subprocess.CalledProcessError(1, command)
 
     monkeypatch.setattr(installer.subprocess, "run", failure)
+    candidate = make_bundle(tmp_path / "second", "second")
     with pytest.raises(subprocess.CalledProcessError):
-        native.install(make_bundle(tmp_path / "second", "second"), False)
+        native.install(candidate, False)
     assert len(commands) == 1
     assert "first" in (native.current / "src/inverter_climate/service.py").read_text()
     assert not native.previous.exists()
@@ -348,8 +349,9 @@ def test_failed_promotion_restores_current_and_prior_service_state(
 
     monkeypatch.setattr(Path, "rename", fail)
     monkeypatch.setattr(native, "register", register)
+    candidate = make_bundle(tmp_path / "candidate", "candidate")
     with pytest.raises(OSError):
-        native.install(make_bundle(tmp_path / "candidate", "candidate"), True)
+        native.install(candidate, True)
     assert "first" in (native.current / "src/inverter_climate/service.py").read_text()
     assert (native.definition / "down").exists() is not prior_enabled
     assert registered == [prior_enabled]
@@ -371,8 +373,9 @@ def test_failed_promotion_and_failed_recovery_retain_previous_for_explicit_rollb
         return original_rename(source, target)
 
     monkeypatch.setattr(Path, "rename", fail)
+    candidate = make_bundle(tmp_path / "candidate", "candidate")
     with pytest.raises(RuntimeError, match="recovery is incomplete"):
-        native.install(make_bundle(tmp_path / "candidate", "candidate"), False)
+        native.install(candidate, False)
     assert not native.current.exists()
     assert "first" in (native.previous / "src/inverter_climate/service.py").read_text()
     assert len(list(native.current.parent.glob(".inverter-climate-stage-*"))) == 1
@@ -386,8 +389,9 @@ def test_install_refuses_to_delete_only_good_previous_after_interruption(setup, 
     native, first = setup
     native.install(first, False)
     native.current.rename(native.previous)
+    candidate = make_bundle(tmp_path / "candidate", "candidate")
     with pytest.raises(ValueError, match="explicit rollback"):
-        native.install(make_bundle(tmp_path / "candidate", "candidate"), False)
+        native.install(candidate, False)
     assert "first" in (native.previous / "src/inverter_climate/service.py").read_text()
     native.rollback()
     assert "first" in (native.current / "src/inverter_climate/service.py").read_text()
@@ -409,8 +413,9 @@ def test_promotion_fsync_failure_after_rename_restores_previous_version(
             raise OSError("simulated directory fsync failure after rename")
 
     monkeypatch.setattr(installer, "move_bundle", fail_after_rename)
+    candidate = make_bundle(tmp_path / "candidate", "candidate")
     with pytest.raises(OSError):
-        native.install(make_bundle(tmp_path / "candidate", "candidate"), False)
+        native.install(candidate, False)
     assert "first" in (native.current / "src/inverter_climate/service.py").read_text()
     assert "candidate" in (native.previous / "src/inverter_climate/service.py").read_text()
     assert not (native.definition / "down").exists()
@@ -482,9 +487,9 @@ def test_ambiguous_rollback_preserves_every_copy_without_stopping(setup, tmp_pat
     monkeypatch.setattr(native, "stop", lambda: pytest.fail("ambiguous recovery stopped service"))
     with pytest.raises(ValueError, match="Ambiguous"):
         native.rollback()
-    assert (
-        native.current.is_dir() and native.previous.is_dir() and native.rollback_temporary.is_dir()
-    )
+    assert native.current.is_dir()
+    assert native.previous.is_dir()
+    assert native.rollback_temporary.is_dir()
 
 
 def legacy_install(native, bundle, enabled=False):

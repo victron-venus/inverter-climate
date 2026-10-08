@@ -302,7 +302,8 @@ def test_publication_requires_shared_stable_verification_before_git(tmp_path, mo
 
     def failed_evidence(gh, tag, directory):
         assert gh.repo == "victron-venus/inverter-climate"
-        assert tag == "v0.3.0" and directory.is_dir()
+        assert tag == "v0.3.0"
+        assert directory.is_dir()
         raise publisher.ReleaseError("Source evidence rejected")
 
     monkeypatch.setattr(publisher, "SetupHelperGitHub", Releases)

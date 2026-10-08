@@ -97,16 +97,18 @@ def test_signed_battery_and_grid_are_not_clamped_to_zero():
 def test_partial_or_wrong_grid_phase_selection_cannot_hide_import(phases, actual):
     values = measurements()
     values["Ac/Grid/NumberOfPhases"] = actual
+    source = client(FakeBus(values), grid_phases=phases)
     with pytest.raises(IntegrationError, match="phases"):
-        client(FakeBus(values), grid_phases=phases).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize("phases", [0, 4, 2.5, None, [], True, "2", float("nan")])
 def test_invalid_live_phase_count_rejects_snapshot(phases):
     values = measurements()
     values["Ac/Grid/NumberOfPhases"] = phases
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize(
@@ -116,16 +118,18 @@ def test_invalid_live_phase_count_rejects_snapshot(phases):
 def test_missing_null_and_malformed_selected_values_never_become_zero(path, value):
     values = measurements()
     values[path] = value
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 def test_missing_selected_solar_does_not_fall_back_to_an_unselected_aggregate():
     values = measurements()
     del values["Ac/PvOnGrid/L1/Power"]
     values["Ac/PvOnGrid/Total/Power"] = 350
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize("negative_path", SOLAR)
@@ -133,8 +137,9 @@ def test_negative_solar_component_cannot_be_hidden_by_another_positive_component
     values = measurements()
     values[negative_path] = -1
     assert sum(values[path] for path in SOLAR) > 0
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError, match="negative solar measurement"):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 def test_native_dbus_numeric_wrappers_are_normalized_to_plain_floats():
@@ -154,24 +159,27 @@ def test_native_dbus_boolean_is_not_a_numeric_measurement(module):
     dbus_bool = type("Boolean", (int,), {"__module__": module})
     values = measurements()
     values["Dc/Battery/Soc"] = dbus_bool(1)
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize("value", [pytest.param(10**400, id="integer_overflow"), float("inf")])
 def test_unrepresentable_numbers_are_sanitized_integration_errors(value):
     values = measurements()
     values["Dc/Pv/Power"] = value
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 def test_overflowing_sum_is_rejected_even_when_individual_values_are_finite():
     values = measurements()
     values["Dc/Pv/Power"] = 1e308
     values["Ac/PvOnGrid/L1/Power"] = 1e308
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize(
@@ -180,8 +188,9 @@ def test_overflowing_sum_is_rejected_even_when_individual_values_are_finite():
 def test_nonphysical_soc_or_negative_total_solar_is_rejected(path, value):
     values = measurements()
     values[path] = value
+    source = client(FakeBus(values))
     with pytest.raises(IntegrationError):
-        client(FakeBus(values)).get_energy()
+        source.get_energy()
 
 
 @pytest.mark.parametrize(
@@ -224,8 +233,9 @@ def test_invalid_grid_selection_is_rejected_before_reading(phases):
 
 @pytest.mark.parametrize("timeout", [0, -1, True, "5", float("nan"), float("inf")])
 def test_timeout_must_be_a_finite_positive_number(timeout):
+    bus = FakeBus()
     with pytest.raises(IntegrationError, match="timeout"):
-        client(FakeBus(), timeout_seconds=timeout)
+        client(bus, timeout_seconds=timeout)
 
 
 def test_slow_local_read_cannot_refresh_old_observation_age():
@@ -239,14 +249,16 @@ def test_slow_local_read_cannot_refresh_old_observation_age():
 
 def test_clock_regression_during_read_rejects_snapshot():
     timestamps = iter((1000, 999))
+    source = client(FakeBus(), clock=lambda: next(timestamps))
     with pytest.raises(IntegrationError, match="Clock changed"):
-        client(FakeBus(), clock=lambda: next(timestamps)).get_energy()
+        source.get_energy()
 
 
 def test_owner_change_discards_snapshot_without_retrying():
     bus = FakeBus(owners=(":1.42", ":1.43"))
+    source = client(bus)
     with pytest.raises(IntegrationError, match="snapshot failed"):
-        client(bus).get_energy()
+        source.get_energy()
     assert bus.closed
     assert len([call for call in bus.calls if call[3] == "GetValue"]) == 1
 
@@ -254,8 +266,9 @@ def test_owner_change_discards_snapshot_without_retrying():
 @pytest.mark.parametrize("owner", ["com.victronenergy.system", "", None, ":1", "private text"])
 def test_invalid_owner_prevents_root_read(owner):
     bus = FakeBus(owners=(owner,))
+    source = client(bus)
     with pytest.raises(IntegrationError):
-        client(bus).get_energy()
+        source.get_energy()
     assert [call[3] for call in bus.calls] == ["GetNameOwner"]
 
 
@@ -275,8 +288,9 @@ def test_read_error_is_sanitized_and_next_poll_can_reconnect():
 
 @pytest.mark.parametrize("snapshot", [[], "private response", 7])
 def test_root_snapshot_must_be_a_mapping(snapshot):
+    source = client(FakeBus(snapshot))
     with pytest.raises(IntegrationError, match="invalid energy snapshot"):
-        client(FakeBus(snapshot)).get_energy()
+        source.get_energy()
 
 
 def test_native_module_is_loaded_lazily_and_private_bus_cannot_exit_the_process(monkeypatch):

@@ -307,8 +307,9 @@ def test_device_instance_change_reannounces_complete_service_for_consumers():
 @pytest.mark.parametrize("persisted", [{"instance": "acload:80"}, {"name": "\n"}])
 def test_invalid_persisted_settings_fail_before_service_registration(persisted):
     runtime = Runtime(persisted)
+    publisher = runtime.publisher()
     with pytest.raises(IntegrationError, match="settings"):
-        _Device(runtime.publisher(), runtime.bus, runtime.service_factory, runtime.settings_factory)
+        _Device(publisher, runtime.bus, runtime.service_factory, runtime.settings_factory)
     assert runtime.services == []
 
 
@@ -656,8 +657,9 @@ def test_close_deregisters_device_closes_private_bus_and_cannot_restart():
     assert not publisher._thread.is_alive()
     with pytest.raises(IntegrationError):
         publisher.start()
+    observation = status()
     with pytest.raises(IntegrationError):
-        publisher.publish(status())
+        publisher.publish(observation)
 
 
 @pytest.mark.parametrize(

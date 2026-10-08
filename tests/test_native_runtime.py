@@ -274,8 +274,9 @@ def test_native_connection_state_is_exact_and_cannot_fall_back_to_mqtt(runtime, 
     raw = source.get_energy()
     raw["source_connected"] = connected
     raw["mqtt_connected"] = True
+    now = clock()
     with pytest.raises(InvalidObservation, match="D-Bus source disconnected"):
-        Energy.parse(raw, clock(), 120)
+        Energy.parse(raw, now, 120)
 
 
 @pytest.mark.parametrize("source_type", ["venus", "dbus", "gateway", "", True, 1])
@@ -284,16 +285,18 @@ def test_unknown_source_type_cannot_authorize_energy(runtime, source_type):
     raw = source.get_energy()
     raw["source_type"] = source_type
     raw["mqtt_connected"] = True
+    now = clock()
     with pytest.raises(InvalidObservation, match="source type"):
-        Energy.parse(raw, clock(), 120)
+        Energy.parse(raw, now, 120)
 
 
 def test_gateway_without_source_type_still_requires_mqtt_even_with_native_flag(runtime):
     _, clock, _, source, _ = runtime
     raw = source.get_energy()
     del raw["source_type"]
+    now = clock()
     with pytest.raises(InvalidObservation, match="MQTT disconnected"):
-        Energy.parse(raw, clock(), 120)
+        Energy.parse(raw, now, 120)
     raw["mqtt_connected"] = True
     assert Energy.parse(raw, clock(), 120).grid_w == -700
 

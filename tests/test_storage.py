@@ -3,6 +3,7 @@
 import json
 import os
 import stat
+from contextlib import ExitStack
 from dataclasses import asdict
 from pathlib import Path
 
@@ -141,13 +142,21 @@ def test_rename_failure_keeps_old_journal_and_removes_temporary(tmp_path, monkey
     assert list(tmp_path.iterdir()) == [path]
 
 
-def test_lock_blocks_second_instance_and_releases_on_exception(tmp_path):
+def test_lock_blocks_second_instance(tmp_path):
     path = tmp_path / "state.json"
-    with pytest.raises(RuntimeError):
-        with process_lock(path):
-            with pytest.raises(ValueError, match="another climate process"):
-                with process_lock(path):
-                    pytest.fail("second process obtained an owned journal")
-            raise RuntimeError("simulate process failure")
+    with process_lock(path), ExitStack() as stack:
+        contender = process_lock(path)
+        with pytest.raises(ValueError, match="another climate process"):
+            stack.enter_context(contender)
+
+
+def test_lock_releases_on_exception(tmp_path):
+    path = tmp_path / "state.json"
+    lock = process_lock(path)
+    failure = RuntimeError("simulate process failure")
+    with pytest.raises(RuntimeError, match="simulate process failure") as caught:
+        with lock:
+            raise failure
+    assert caught.value is failure
     with process_lock(path):
         assert stat.S_IMODE(Path(str(path) + ".lockfile").stat().st_mode) == 0o600

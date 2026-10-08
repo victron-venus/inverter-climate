@@ -64,7 +64,8 @@ def test_observation_mode_never_creates_write_intent(climate, energy, policy):
     assert decision.target_c == 18.5
     assert state.phase == "idle"
     assert state.last_command == 0
-    assert state.baseline_c is None and state.boosted_c is None
+    assert state.baseline_c is None
+    assert state.boosted_c is None
     assert evaluate(state, climate, energy, policy, tick + 30).action == "would_boost"
 
 
@@ -276,7 +277,8 @@ def test_manual_native_changes_relinquish_ownership_in_every_phase(
     assert decision.action == "wait"
     assert decision.reason == "external_change_respected"
     assert state.phase == "idle"
-    assert state.baseline_c is None and state.boosted_c is None
+    assert state.baseline_c is None
+    assert state.boosted_c is None
     assert state.hold_until == tick + 60 + policy.manual_hold_seconds
 
 
@@ -391,7 +393,8 @@ def test_pending_restore_is_persistent_no_retry_until_confirmation(climate, ener
     decision = evaluate(restarted, climate, energy, policy, tick + 630, active=True)
     assert decision.reason == "baseline_restored"
     assert restarted.phase == "idle"
-    assert restarted.baseline_c is None and restarted.boosted_c is None
+    assert restarted.baseline_c is None
+    assert restarted.boosted_c is None
     assert restarted.hold_until >= tick + 630 + policy.command_interval_seconds
 
 
