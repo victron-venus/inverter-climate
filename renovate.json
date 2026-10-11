@@ -42,6 +42,25 @@
         "dockerfile"
       ],
       "pinDigests": true
+    },
+    {
+      "description": "Python tag annotations and immutable digests are updated together by the regex manager.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "pinDigests": true
     }
   ],
   "customManagers": [
