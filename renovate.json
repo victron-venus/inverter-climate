@@ -1,22 +1,79 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["local>victron-venus/venus-os-ci-toolkit:renovate-ci"],
-  "enabledManagers": ["github-actions", "custom.regex", "pep621", "dockerfile"],
-  "lockFileMaintenance": {"enabled": true},
+  "extends": [
+    "local>victron-venus/venus-os-ci-toolkit:renovate-ci"
+  ],
+  "enabledManagers": [
+    "github-actions",
+    "custom.regex",
+    "pep621",
+    "dockerfile"
+  ],
+  "lockFileMaintenance": {
+    "enabled": true
+  },
   "packageRules": [
     {
       "description": "Keep the reviewed post-v0.36.0 commit: the v0.36.0 tag downgrades Trivy 0.74 to 0.70. New tagged releases remain eligible.",
-      "matchManagers": ["github-actions"],
-      "matchPackageNames": ["aquasecurity/trivy-action"],
+      "matchManagers": [
+        "github-actions"
+      ],
+      "matchPackageNames": [
+        "aquasecurity/trivy-action"
+      ],
       "matchCurrentValue": "v0.36.0",
-      "matchUpdateTypes": ["digest"],
+      "matchUpdateTypes": [
+        "digest"
+      ],
       "enabled": false
     },
     {
-      "matchManagers": ["pep621"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": [
+        "pep621"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "Python dependencies"
     },
-    {"matchManagers": ["dockerfile"], "pinDigests": true}
+    {
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "pinDigests": true
+    },
+    {
+      "description": "Python tag annotations and immutable digests are updated together by the regex manager.",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "enabled": false
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "pinDigests": true
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^Dockerfile$/"
+      ],
+      "matchStrings": [
+        "# renovate: datasource=docker depName=python currentValue=(?<currentValue>[^\\s]+)\\s+FROM (?<depName>python)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    }
   ]
 }
