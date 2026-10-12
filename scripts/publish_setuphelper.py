@@ -20,7 +20,7 @@ from pathlib import Path, PurePosixPath
 from tempfile import TemporaryDirectory
 
 from publish_verified import verified_assets
-from release_control import GitHub, ReleaseError, require
+from release_control import GitHub, ReleaseError, github_http_response, require
 
 ROOT = Path(__file__).resolve().parents[1]
 BRANCH = "latest"
@@ -39,14 +39,22 @@ class SetupHelperGitHub(GitHub):
             "Latest stable release lookup is read-only JSON",
         )
         endpoint = f"{self.base}/{LATEST_RELEASE_PATH}"
-        return self.response(
-            subprocess.run(
-                ["gh", "api", "--hostname", "github.com", "--method", "GET", "--", endpoint],
-                capture_output=True,
-                check=False,
-            ),
-            f"GET {endpoint}",
+        result = subprocess.run(
+            [
+                "gh",
+                "api",
+                "--hostname",
+                "github.com",
+                "--include",
+                "--method",
+                "GET",
+                "--",
+                endpoint,
+            ],
+            capture_output=True,
+            check=False,
         )
+        return self.response(result, f"GET {endpoint}", github_http_response(result.stdout))
 
 
 def version_tuple(value: str) -> tuple[int, int, int]:
