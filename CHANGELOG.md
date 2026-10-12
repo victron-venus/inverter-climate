@@ -1,12 +1,15 @@
 # Changelog
 
-## [0.4.0] - Development line
+## [0.4.1] - Development line
 
 ### Release overview
 
 Coordinates climate setpoints with measured energy through Home Assistant and Venus OS. The existing README documents configuration and external interfaces for this development line.
 
 ### Maintenance
+
+- Update the pinned container toolchain to Python 3.14 and uv 0.13.0 while keeping reproducible dependency installation.
+- Refresh shared CI workflow pins without enabling reserve runners by default.
 
 - Keep native installer terminal-exit detection linear for long whitespace-heavy `rc.local` lines while preserving existing shell text and hook placement.
 - Publish reviewed release notes from the exact source commit used to build each candidate, preserving build provenance.
