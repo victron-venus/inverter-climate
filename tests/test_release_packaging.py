@@ -100,7 +100,10 @@ def test_latest_release_uses_exact_read_only_transport(monkeypatch):
 
     def response(arguments, **kwargs):
         calls.append((arguments, kwargs))
-        return subprocess.CompletedProcess(arguments, 0, b'{"id": 123, "tag_name": "v0.3.0"}', b"")
+        assert "--include" in arguments
+        return subprocess.CompletedProcess(
+            arguments, 0, b'HTTP/2.0 200 OK\r\n\r\n{"id": 123, "tag_name": "v0.3.0"}', b""
+        )
 
     monkeypatch.setattr(publisher.subprocess, "run", response)
     client = publisher.SetupHelperGitHub("victron-venus/inverter-climate")
@@ -112,6 +115,7 @@ def test_latest_release_uses_exact_read_only_transport(monkeypatch):
                 "api",
                 "--hostname",
                 "github.com",
+                "--include",
                 "--method",
                 "GET",
                 "--",
@@ -149,7 +153,10 @@ def test_missing_stable_release_skips_through_real_transport(monkeypatch, capsys
 
     def response(arguments, **kwargs):
         calls.append(arguments)
-        return subprocess.CompletedProcess(arguments, 1, b"", b"gh: Not Found (HTTP 404)")
+        assert "--include" in arguments
+        return subprocess.CompletedProcess(
+            arguments, 1, b"HTTP/2.0 404 Not Found\r\n\r\n{}", b"gh: Not Found (HTTP 404)"
+        )
 
     monkeypatch.setattr(publisher.subprocess, "run", response)
     publisher.publish("victron-venus/inverter-climate", "", execute=True)
@@ -162,7 +169,10 @@ def test_missing_latest_branch_uses_shared_ref_transport(monkeypatch):
 
     def response(arguments, **kwargs):
         calls.append(arguments)
-        return subprocess.CompletedProcess(arguments, 1, b"", b"gh: Not Found (HTTP 404)")
+        assert "--include" in arguments
+        return subprocess.CompletedProcess(
+            arguments, 1, b"HTTP/2.0 404 Not Found\r\n\r\n{}", b"gh: Not Found (HTTP 404)"
+        )
 
     monkeypatch.setattr(publisher.subprocess, "run", response)
     client = publisher.SetupHelperGitHub("victron-venus/inverter-climate")
@@ -173,6 +183,7 @@ def test_missing_latest_branch_uses_shared_ref_transport(monkeypatch):
             "api",
             "--hostname",
             "github.com",
+            "--include",
             "--method",
             "GET",
             "--",
@@ -186,7 +197,10 @@ def test_latest_branch_metadata_uses_shared_ref_transport(monkeypatch):
 
     def response(arguments, **kwargs):
         assert arguments[-1] == "repos/victron-venus/inverter-climate/git/ref/heads/latest"
-        return subprocess.CompletedProcess(arguments, 0, json.dumps(body).encode(), b"")
+        assert "--include" in arguments
+        return subprocess.CompletedProcess(
+            arguments, 0, b"HTTP/2.0 200 OK\r\n\r\n" + json.dumps(body).encode(), b""
+        )
 
     monkeypatch.setattr(publisher.subprocess, "run", response)
     client = publisher.SetupHelperGitHub("victron-venus/inverter-climate")
@@ -195,7 +209,10 @@ def test_latest_branch_metadata_uses_shared_ref_transport(monkeypatch):
 
 def test_latest_lookup_does_not_hide_permissions_failure(monkeypatch):
     def response(arguments, **kwargs):
-        return subprocess.CompletedProcess(arguments, 1, b"", b"gh: Forbidden (HTTP 403)")
+        assert "--include" in arguments
+        return subprocess.CompletedProcess(
+            arguments, 1, b"HTTP/2.0 403 Forbidden\r\n\r\n{}", b"gh: Forbidden (HTTP 403)"
+        )
 
     monkeypatch.setattr(publisher.subprocess, "run", response)
     client = publisher.SetupHelperGitHub("victron-venus/inverter-climate")
