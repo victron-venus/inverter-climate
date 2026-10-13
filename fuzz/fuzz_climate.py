@@ -18,7 +18,7 @@ with atheris.instrument_imports():
 def test_one_input(data: bytes) -> None:
     try:
         value = json.loads(data)
-    except (ValueError, RecursionError, UnicodeError):
+    except (ValueError, RecursionError):
         return
     if not isinstance(value, dict):
         return
