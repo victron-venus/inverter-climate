@@ -15,7 +15,9 @@ dependencies = ["httpx>=0.28.1,<1", "pyasn1>=0.6.4,<0.7", "pyasn1-modules>=0.4.2
 inverter-climate = "inverter_climate.service:main"
 
 [dependency-groups]
-dev = ["pytest>=8.3,<10", "ruff>=0.11,<1", "PyYAML==6.0.3", "cryptography==50.0.2"]
+# Workflow-only PyYAML is not needed by the runtime checks on newer Python versions.
+checks = ["pytest>=8.3,<10", "ruff>=0.11,<1", "cryptography==50.0.2"]
+dev = [{include-group = "checks"}, "PyYAML==6.0.3"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
