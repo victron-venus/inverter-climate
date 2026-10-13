@@ -17,16 +17,22 @@ import json
 import os
 import re
 import stat
-import subprocess
+# Subprocesses use explicit argv and never a shell.
+import subprocess  # nosec B404
 import sys
 import threading
 import time
 from pathlib import Path
 from urllib.parse import quote, unquote
 
-import release_control as rc
-import release_state as state
-import version_plan
+if __package__:
+    from . import release_control as rc
+    from . import release_state as state
+    from . import version_plan
+else:
+    import release_control as rc
+    import release_state as state
+    import version_plan
 
 MAX_METADATA = 2_000_000
 MAX_BINARY = 4_000_000
@@ -55,7 +61,7 @@ class PreflightGitHub(state.StateGitHub):
         command = self.read_command(path, mode)
         binary = mode == "asset" or path.endswith("/zip")
         limit = MAX_BINARY if binary else MAX_API_BYTES
-        with subprocess.Popen(
+        with subprocess.Popen(  # nosec B603 - read_command validates fixed-host GET routes
             command, stdout=subprocess.PIPE, stderr=subprocess.PIPE
         ) as process:
             return read_process(process, limit, paginated=mode == "pages")

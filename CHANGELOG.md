@@ -2,6 +2,10 @@
 
 ## [0.4.1] - Development line
 
+### Release candidate validation
+
+- Require bounded fuzzing on public release candidates, with source-bound reports and retained diagnostics; beta and ordinary CI do not run mutation campaigns.
+
 ### Release overview
 
 Coordinates climate setpoints with measured energy through Home Assistant and Venus OS. The existing README documents configuration and external interfaces for this development line.
