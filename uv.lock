@@ -247,6 +247,11 @@ dependencies = [
 ]
 
 [package.dev-dependencies]
+checks = [
+    { name = "cryptography" },
+    { name = "pytest" },
+    { name = "ruff" },
+]
 dev = [
     { name = "cryptography" },
     { name = "pytest" },
@@ -262,6 +267,11 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
+checks = [
+    { name = "cryptography", specifier = "==50.0.2" },
+    { name = "pytest", specifier = ">=8.3,<10" },
+    { name = "ruff", specifier = ">=0.11,<1" },
+]
 dev = [
     { name = "cryptography", specifier = "==50.0.2" },
     { name = "pytest", specifier = ">=8.3,<10" },
