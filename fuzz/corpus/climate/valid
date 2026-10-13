@@ -1,0 +1,1 @@
+{"entity_id":"climate.synthetic","state":"heat","attributes":{"current_temperature":20,"temperature":22,"min_temp":10,"max_temp":30,"target_temp_step":0.5,"supported_features":1,"hvac_modes":["heat","off"]}}

@@ -1,5 +1,7 @@
 # inverter-climate
 
+[![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
+
 Energy-aware climate coordination **on Venus OS**, using local **D-Bus** and
 **Home Assistant**. Google Nest remains connected through Home Assistant's
 existing integration; this package needs no Google credentials or additional
@@ -294,3 +296,9 @@ installation, compatibility and release requirements.
 See [CONTRIBUTING.md](CONTRIBUTING.md) for reports, development checks and pull requests,
 [SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment trust boundaries,
 and the [OpenSSF evidence index](docs/openssf-evidence.md) for assessment references and remaining verification.
+
+## Release-candidate fuzzing
+
+The real Climate parser and temperature-command validator receive synthetic thermostat observations. Accepted ranges, step sizes and commands must be finite and bounded. No thermostat, Home Assistant or D-Bus action is performed.
+
+[RC-only fuzzing policy, local reproduction and failure handling](docs/fuzzing.md).
