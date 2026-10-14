@@ -19,3 +19,9 @@ release-assets/
 .release-*/
 .release-plan.json
 .release-inputs.json
+
+# Isolated RC fuzz runtime and local diagnostic inputs
+.fuzz-venv/
+crash-*
+timeout-*
+oom-*

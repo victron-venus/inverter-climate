@@ -26,7 +26,7 @@
   "versioning": {
     "schema": 1,
     "promotion": "promote-bytes",
-    "toolkit_revision": "29a852ec4d1466fcbd9598dd01352a8d8454312d",
+    "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd",
     "files": [
       {
         "path": "version",
@@ -82,5 +82,8 @@
     ]
   },
   "release_notes": "CHANGELOG.md",
-  "toolkit_revision": "ab9f337e5fa49c263c873d65c9e50dde7249af56"
+  "toolkit_revision": "5e413f80a4353d328b4529eae57992ac3987e2dd",
+  "fuzzing": {
+    "toolkit_ref": "5e413f80a4353d328b4529eae57992ac3987e2dd"
+  }
 }

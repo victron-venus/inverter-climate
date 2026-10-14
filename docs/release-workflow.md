@@ -32,6 +32,7 @@ python3 scripts/release.py status
 Callable validation workflows:
 - `.github/workflows/ci.yml`
 - `.github/workflows/release-security.yml`
+- `.github/workflows/dependency-review.yml`
 
 The [release strategy](../RELEASING.md) defines versioning, channels, acceptance,
 ownership, hotfixes and rollback. This document is the operational runbook.
