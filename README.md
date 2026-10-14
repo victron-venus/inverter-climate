@@ -1,5 +1,6 @@
 # inverter-climate
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15468/badge)](https://www.bestpractices.dev/en/projects/15468)
 [![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
 
 Energy-aware climate coordination **on Venus OS**, using local **D-Bus** and
