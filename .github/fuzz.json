@@ -29,7 +29,24 @@
         "-max_len=4096"
       ],
       "seconds": 60,
-      "corpus": "fuzz/corpus/climate"
+      "corpus": "fuzz/corpus/climate",
+      "instrumentation": [
+        {
+          "module": "inverter_climate.models",
+          "functions": [
+            "Climate.parse",
+            "Climate.temperature_command"
+          ]
+        }
+      ]
     }
+  ],
+  "preflight-paths": [
+    ".github/requirements-fuzz.in",
+    "Dockerfile",
+    "fuzz",
+    "pyproject.toml",
+    "src",
+    "uv.lock"
   ]
 }
