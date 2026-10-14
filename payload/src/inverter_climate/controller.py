@@ -80,75 +80,129 @@ def evaluate(
     state.observed_preset = climate.preset
 
     if state.phase != "idle":
-        if (
-            climate.mode != "heat"
-            or climate.preset != "none"
-            or (
-                not same(climate.target_c, state.boosted_c)
-                and not same(climate.target_c, state.baseline_c)
+        return _owned_decision(state, climate, energy, policy, now, active, clock_changed)
+    restriction = _idle_restriction(
+        state, climate, policy, now, prior_target, prior_mode, prior_preset
+    )
+    if restriction is not None:
+        return restriction
+    return _idle_decision(state, climate, energy, policy, now, active)
+
+
+def _confirm_owned_target(
+    state: State, climate: Climate, policy: Policy, now: float
+) -> Decision | None:
+    """Resolve a pending command without retrying or discarding late acknowledgements."""
+    if state.phase == "pending_restore":
+        if same(climate.target_c, state.baseline_c):
+            state.phase = "idle"
+            state.baseline_c = state.boosted_c = None
+            state.surplus_since = None
+            state.hold_until = max(state.hold_until, now + policy.command_interval_seconds)
+            return Decision("wait", "baseline_restored")
+        return Decision("wait", "restore_unconfirmed_no_retry")
+    if state.phase == "pending_boost":
+        if same(climate.target_c, state.boosted_c):
+            state.phase = "boosted"
+        else:
+            # A timed-out HTTP call may still complete downstream. Retain
+            # ownership intent so a late acknowledgement can be unwound.
+            reason = (
+                "boost_unconfirmed_no_retry"
+                if now - state.last_command >= policy.confirmation_seconds
+                else "awaiting_boost_confirmation"
             )
-        ):
-            relinquish(state, now, policy)
-            return Decision("wait", "external_change_respected")
-        if state.phase == "pending_restore":
-            if same(climate.target_c, state.baseline_c):
-                state.phase = "idle"
-                state.baseline_c = state.boosted_c = None
-                state.surplus_since = None
-                state.hold_until = max(state.hold_until, now + policy.command_interval_seconds)
-                return Decision("wait", "baseline_restored")
-            return Decision("wait", "restore_unconfirmed_no_retry")
-        if state.phase == "pending_boost":
-            if same(climate.target_c, state.boosted_c):
-                state.phase = "boosted"
-            else:
-                # A timed-out HTTP call may still complete downstream. Retain
-                # ownership intent so a late acknowledgement can be unwound.
-                reason = (
-                    "boost_unconfirmed_no_retry"
-                    if now - state.last_command >= policy.confirmation_seconds
-                    else "awaiting_boost_confirmation"
-                )
-                return Decision("wait", reason)
-        elif same(climate.target_c, state.baseline_c):
-            relinquish(state, now, policy)
-            return Decision("wait", "external_change_respected")
+            return Decision("wait", reason)
+    elif same(climate.target_c, state.baseline_c):
+        relinquish(state, now, policy)
+        return Decision("wait", "external_change_respected")
 
-        elapsed = now - state.since
-        reason = None
-        if clock_changed:
-            reason = "clock_changed"
-        elif energy is None:
-            reason = "energy_unavailable"
-        elif energy.soc < policy.stop_soc:
-            reason = "battery_reserve"
-        elif energy.battery_w < -policy.max_battery_discharge_w:
-            reason = "battery_discharging"
-        elif energy.grid_w > policy.max_import_w:
-            reason = "grid_import"
-        elif elapsed >= policy.maximum_boost_seconds:
-            reason = "boost_expired"
-        elif climate.current_c >= policy.comfort_max_c:
-            reason = "comfort_ceiling"
-        elif elapsed >= policy.minimum_boost_seconds:
-            # When heating, its measured/estimated 500 W is already in current
-            # site consumption. Add it back ONLY to maintain an existing boost.
-            headroom = max(0, -energy.grid_w)
-            if climate.action == "heating":
-                headroom += policy.heating_power_w
-            if energy.solar_w < policy.heating_power_w or headroom < policy.heating_power_w:
-                reason = "surplus_ended"
-        if reason:
-            baseline = state.baseline_c
-            if baseline is None or not climate.min_c <= baseline <= climate.max_c:
-                return Decision("wait", "baseline_outside_device_range")
-            if active:
-                state.phase = "pending_restore"
-                state.last_command = now
-                return Decision("restore", reason, baseline)
-            return Decision("would_restore", reason, baseline)
-        return Decision("wait", "boost_running")
+    return None
 
+
+def _boost_stop_reason(
+    state: State,
+    climate: Climate,
+    energy: Energy | None,
+    policy: Policy,
+    now: float,
+    clock_changed: bool,
+) -> str | None:
+    """Choose the first applicable stop reason in safety-policy order."""
+    elapsed = now - state.since
+    reason = None
+    if clock_changed:
+        reason = "clock_changed"
+    elif energy is None:
+        reason = "energy_unavailable"
+    elif energy.soc < policy.stop_soc:
+        reason = "battery_reserve"
+    elif energy.battery_w < -policy.max_battery_discharge_w:
+        reason = "battery_discharging"
+    elif energy.grid_w > policy.max_import_w:
+        reason = "grid_import"
+    elif elapsed >= policy.maximum_boost_seconds:
+        reason = "boost_expired"
+    elif climate.current_c >= policy.comfort_max_c:
+        reason = "comfort_ceiling"
+    elif elapsed >= policy.minimum_boost_seconds:
+        # When heating, its measured/estimated 500 W is already in current
+        # site consumption. Add it back ONLY to maintain an existing boost.
+        headroom = max(0, -energy.grid_w)
+        if climate.action == "heating":
+            headroom += policy.heating_power_w
+        if energy.solar_w < policy.heating_power_w or headroom < policy.heating_power_w:
+            reason = "surplus_ended"
+    return reason
+
+
+def _owned_decision(
+    state: State,
+    climate: Climate,
+    energy: Energy | None,
+    policy: Policy,
+    now: float,
+    active: bool,
+    clock_changed: bool,
+) -> Decision:
+    """Maintain or release the target whose command intent we still own."""
+    if (
+        climate.mode != "heat"
+        or climate.preset != "none"
+        or (
+            not same(climate.target_c, state.boosted_c)
+            and not same(climate.target_c, state.baseline_c)
+        )
+    ):
+        relinquish(state, now, policy)
+        return Decision("wait", "external_change_respected")
+    confirmation = _confirm_owned_target(state, climate, policy, now)
+    if confirmation is not None:
+        return confirmation
+
+    reason = _boost_stop_reason(state, climate, energy, policy, now, clock_changed)
+    if reason:
+        baseline = state.baseline_c
+        if baseline is None or not climate.min_c <= baseline <= climate.max_c:
+            return Decision("wait", "baseline_outside_device_range")
+        if active:
+            state.phase = "pending_restore"
+            state.last_command = now
+            return Decision("restore", reason, baseline)
+        return Decision("would_restore", reason, baseline)
+    return Decision("wait", "boost_running")
+
+
+def _idle_restriction(
+    state: State,
+    climate: Climate,
+    policy: Policy,
+    now: float,
+    prior_target: float | None,
+    prior_mode: str | None,
+    prior_preset: str | None,
+) -> Decision | None:
+    """Respect observed manual changes and device restrictions before considering a boost."""
     targets_match = (prior_target is None and climate.target_c is None) or same(
         prior_target, climate.target_c
     )
@@ -169,6 +223,18 @@ def evaluate(
     if not policy.comfort_min_c <= climate.target_c < policy.comfort_max_c:
         state.surplus_since = None
         return Decision("wait", "baseline_outside_comfort_band")
+    return None
+
+
+def _idle_decision(
+    state: State,
+    climate: Climate,
+    energy: Energy | None,
+    policy: Policy,
+    now: float,
+    active: bool,
+) -> Decision:
+    """Start a boost only after an eligible target and sustained energy surplus."""
     upper = min(policy.comfort_max_c, climate.max_c, climate.target_c + policy.boost_delta_c)
     steps = math.floor((upper - climate.target_c + 1e-8) / climate.step_c)
     target = round(climate.target_c + steps * climate.step_c, 6)

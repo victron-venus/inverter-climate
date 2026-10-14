@@ -1,5 +1,8 @@
 # inverter-climate
 
+[![OpenSSF Best Practices](https://www.bestpractices.dev/projects/15468/badge)](https://www.bestpractices.dev/en/projects/15468)
+[![Fuzzing: RC only](https://img.shields.io/badge/Fuzzing-RC%20only-blue)](docs/fuzzing.md)
+
 Energy-aware climate coordination **on Venus OS**, using local **D-Bus** and
 **Home Assistant**. Google Nest remains connected through Home Assistant's
 existing integration; this package needs no Google credentials or additional
@@ -140,7 +143,9 @@ Private environment variables:
 Base URLs must be origins, optionally ending in `/`; proxy path prefixes are not
 supported in this version. HTTPS certificate validation stays enabled, redirects
 are rejected and environment proxies are ignored. HTTP is supported for a trusted
-local network. Tokens are sent only to the explicitly configured origin.
+local network. Tokens are sent only to the explicitly configured origin. The same
+TLS connection also checks every verified certificate, including its trust
+anchor, against the documented [public-key minimums](docs/tls-policy.md).
 
 ## Policy
 
@@ -275,3 +280,26 @@ Repository infrastructure is owned by the isolated
 - [Victron GX Opportunity Loads](https://www.victronenergy.com/media/pg/Cerbo_GX/en/gx-opportunity-loads.html)
 
 This is an independent integration using the documented Venus D-Bus interface.
+
+## Related Projects
+
+- [inverter-control](https://github.com/victron-venus/inverter-control) — ESS grid-zero controller; thermostat coordination remains a separate service.
+- [dbus-emporia-vue](https://github.com/victron-venus/dbus-emporia-vue) — optional AC-load telemetry for measured household circuits; required sources are selected explicitly in climate configuration.
+- [SetupHelper](https://github.com/victron-venus/SetupHelper) — Venus OS package-management helpers; use this project’s native installation guide for its lifecycle.
+- [venus-os-observability](https://github.com/victron-venus/venus-os-observability) — optional Venus D-Bus metrics and diagnostics.
+
+Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
+for other Venus OS packages and companion tools. Each project documents its own
+installation, compatibility and release requirements.
+
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for reports, development checks and pull requests,
+[SECURITY.md](SECURITY.md) for private vulnerability reporting and deployment trust boundaries,
+and the [OpenSSF evidence index](docs/openssf-evidence.md) for assessment references and remaining verification.
+
+## Release-candidate fuzzing
+
+The real Climate parser and temperature-command validator receive synthetic thermostat observations. Accepted ranges, step sizes and commands must be finite and bounded. No thermostat, Home Assistant or D-Bus action is performed.
+
+[RC-only fuzzing policy, local reproduction and failure handling](docs/fuzzing.md).

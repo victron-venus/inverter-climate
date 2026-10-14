@@ -8,6 +8,20 @@ from dataclasses import field as dataclass_field
 from pathlib import Path
 
 
+def _validate_policy_numbers(policy):
+    """Reject nonnumeric, infinite, and negative policy values uniformly."""
+    for field in fields(policy):
+        value = getattr(policy, field.name)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError(f"{field.name} must be numeric")
+        try:
+            finite = math.isfinite(value)
+        except OverflowError:
+            finite = False
+        if not finite or value < 0:
+            raise ValueError(f"{field.name} must be finite and nonnegative")
+
+
 @dataclass(frozen=True)
 class Policy:
     comfort_min_c: float = 17
@@ -28,16 +42,7 @@ class Policy:
     max_energy_age_seconds: float = 120
 
     def __post_init__(self):
-        for field in fields(self):
-            value = getattr(self, field.name)
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise ValueError(f"{field.name} must be numeric")
-            try:
-                finite = math.isfinite(value)
-            except OverflowError:
-                finite = False
-            if not finite or value < 0:
-                raise ValueError(f"{field.name} must be finite and nonnegative")
+        _validate_policy_numbers(self)
         if not 5 <= self.comfort_min_c < self.comfort_max_c <= 30:
             raise ValueError("comfort range must be within 5–30 °C")
         if not 0 < self.boost_delta_c <= 2:
@@ -114,6 +119,32 @@ class DeviceConfig:
             raise ValueError("device stale_seconds must be within 10..900 seconds")
 
 
+def _service_settings(service):
+    """Validate the controller target, timing, and nonoverlapping state paths."""
+    allowed = {"entity_id", "mode", "poll_seconds", "state_path", "status_path"}
+    if set(service) - allowed:
+        raise ValueError("unknown service setting")
+    entity = service.get("entity_id", "")
+    if not isinstance(entity, str) or not re.fullmatch(r"climate\.[a-z0-9_]+", entity):
+        raise ValueError("configure an exact climate entity_id")
+    mode = service.get("mode", "observe")
+    if mode not in ("observe", "active"):
+        raise ValueError("mode must be observe or active")
+    poll = service.get("poll_seconds", 30)
+    if isinstance(poll, bool) or not isinstance(poll, (int, float)) or not 5 <= poll <= 60:
+        raise ValueError("poll_seconds must be between 5 and 60")
+    paths = [service.get("state_path", "state.json"), service.get("status_path", "status.json")]
+    if any(not isinstance(value, str) or not value.strip() for value in paths):
+        raise ValueError("state/status paths must be nonempty strings")
+    state, status = map(Path, paths)
+    if state.resolve() == status.resolve():
+        raise ValueError("state_path and status_path must differ")
+    reserved = (state.with_name(state.name + ".manual"), Path(str(state) + ".lockfile"))
+    if any(status.resolve() == path.resolve() for path in reserved):
+        raise ValueError("status_path must not overwrite the command journal or process lock")
+    return entity, mode, poll, state, status
+
+
 @dataclass(frozen=True)
 class Config:
     entity_id: str
@@ -137,27 +168,7 @@ class Config:
             for key in ("service", "policy", "energy", "device")
         ):
             raise ValueError("service, policy, energy and device must be configuration tables")
-        allowed = {"entity_id", "mode", "poll_seconds", "state_path", "status_path"}
-        if set(service) - allowed:
-            raise ValueError("unknown service setting")
-        entity = service.get("entity_id", "")
-        if not isinstance(entity, str) or not re.fullmatch(r"climate\.[a-z0-9_]+", entity):
-            raise ValueError("configure an exact climate entity_id")
-        mode = service.get("mode", "observe")
-        if mode not in ("observe", "active"):
-            raise ValueError("mode must be observe or active")
-        poll = service.get("poll_seconds", 30)
-        if isinstance(poll, bool) or not isinstance(poll, (int, float)) or not 5 <= poll <= 60:
-            raise ValueError("poll_seconds must be between 5 and 60")
-        paths = [service.get("state_path", "state.json"), service.get("status_path", "status.json")]
-        if any(not isinstance(value, str) or not value.strip() for value in paths):
-            raise ValueError("state/status paths must be nonempty strings")
-        state, status = map(Path, paths)
-        if state.resolve() == status.resolve():
-            raise ValueError("state_path and status_path must differ")
-        reserved = (state.with_name(state.name + ".manual"), Path(str(state) + ".lockfile"))
-        if any(status.resolve() == path.resolve() for path in reserved):
-            raise ValueError("status_path must not overwrite the command journal or process lock")
+        entity, mode, poll, state, status = _service_settings(service)
         try:
             policy = Policy(**data.get("policy", {}))
         except TypeError as exc:

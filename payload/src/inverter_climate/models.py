@@ -4,6 +4,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+_FINITE_NUMBER_REQUIRED = "expected a finite number"
 _HVAC_MODES = frozenset(("off", "heat", "cool", "heat_cool", "auto", "dry", "fan_only"))
 
 
@@ -17,13 +18,13 @@ def number(value: Any) -> float:
         value_type.__module__.split(".")[0] in ("dbus", "_dbus_bindings")
     )
     if isinstance(value, bool) or is_dbus_boolean or not isinstance(value, (int, float)):
-        raise InvalidObservation("expected a finite number")
+        raise InvalidObservation(_FINITE_NUMBER_REQUIRED)
     try:
         result = float(value)
     except OverflowError as exc:
-        raise InvalidObservation("expected a finite number") from exc
+        raise InvalidObservation(_FINITE_NUMBER_REQUIRED) from exc
     if not math.isfinite(result):
-        raise InvalidObservation("expected a finite number")
+        raise InvalidObservation(_FINITE_NUMBER_REQUIRED)
     return result
 
 
@@ -183,6 +184,22 @@ class Climate:
         )
 
 
+def _energy_metric(
+    metrics: dict, name: str, unit: str, response_age: float, max_age: float
+) -> float:
+    """Read one fresh, attributable metric without changing validation order."""
+    metric = metrics.get(name)
+    if not isinstance(metric, dict) or metric.get("status") != "fresh":
+        raise InvalidObservation(f"{name} is not fresh")
+    age = number(metric.get("age_seconds"))
+    if age < 0 or age + max(0, response_age) > max_age:
+        raise InvalidObservation(f"{name} expired")
+    sources = metric.get("sources")
+    if metric.get("unit") != unit or not isinstance(sources, list) or not sources:
+        raise InvalidObservation(f"{name} has no verified unit or sources")
+    return number(metric.get("value"))
+
+
 @dataclass(frozen=True)
 class Energy:
     soc: float
@@ -217,16 +234,7 @@ class Energy:
             ("grid_power", "W"),
             ("battery_power", "W"),
         ):
-            metric = metrics.get(name)
-            if not isinstance(metric, dict) or metric.get("status") != "fresh":
-                raise InvalidObservation(f"{name} is not fresh")
-            age = number(metric.get("age_seconds"))
-            if age < 0 or age + max(0, response_age) > max_age:
-                raise InvalidObservation(f"{name} expired")
-            sources = metric.get("sources")
-            if metric.get("unit") != unit or not isinstance(sources, list) or not sources:
-                raise InvalidObservation(f"{name} has no verified unit or sources")
-            values.append(number(metric.get("value")))
+            values.append(_energy_metric(metrics, name, unit, response_age, max_age))
         soc, solar, grid, battery = values
         if not 0 <= soc <= 100 or solar < 0:
             raise InvalidObservation("energy values outside supported range")

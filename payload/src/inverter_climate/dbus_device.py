@@ -21,6 +21,12 @@ from typing import Any
 from . import __version__
 from .clients import IntegrationError
 
+# Shared protocol identifiers keep publication and update paths consistent.
+DBUS_CONNECTED_PATH = "/Connected"
+DBUS_TEMPERATURE_PATH = "/Temperature"
+DBUS_TARGET_TEMPERATURE_PATH = "/Climate/TargetTemperature"
+DBUS_HEATING_POWER_PATH = "/Climate/EstimatedHeatingPower"
+
 _VELIB = Path("/opt/victronenergy/dbus-systemcalc-py/ext/velib_python")
 _TOKEN = re.compile(r"[a-z][a-z0-9_]{0,63}")
 _TEMPERATURE = "/SwitchableOutput/0"
@@ -33,16 +39,16 @@ _CONTROL_OUTCOME = "/Climate/ControlOutcome"
 _CONTROL_REASON = "/Climate/ControlReason"
 _DISABLED = 0x20
 _EMPTY = {
-    "/Connected": 0,
-    "/Temperature": None,
-    "/Climate/TargetTemperature": None,
+    DBUS_CONNECTED_PATH: 0,
+    DBUS_TEMPERATURE_PATH: None,
+    DBUS_TARGET_TEMPERATURE_PATH: None,
     _HVAC_MODE: "unknown",
     "/Climate/HvacAction": "unknown",
     "/Climate/ServiceMode": "unknown",
     "/Climate/Phase": "unknown",
     "/Climate/Decision": "unknown",
     "/Climate/DecisionReason": "unknown",
-    "/Climate/EstimatedHeatingPower": None,
+    DBUS_HEATING_POWER_PATH: None,
     "/Climate/IntegrationHealthy": 0,
     "/Climate/LastUpdate": None,
     _CONTROL_ENABLED: 0,
@@ -90,7 +96,7 @@ def _name(value: Any) -> bool:
 
 
 def _instance(value: Any) -> int | None:
-    if isinstance(value, str) and re.fullmatch(r"temperature:(0|[1-9][0-9]{0,2})", value):
+    if isinstance(value, str) and re.fullmatch(r"temperature:(0|[1-9]\d{0,2})", value, re.ASCII):
         result = int(value.partition(":")[2])
         return result if result <= 255 else None
     return None
@@ -106,9 +112,9 @@ def _snapshot(status: Mapping, *, commands_supported: bool = False) -> dict:
         if current is not None:
             values.update(
                 {
-                    "/Connected": 1,
-                    "/Temperature": current,
-                    "/Climate/TargetTemperature": target,
+                    DBUS_CONNECTED_PATH: 1,
+                    DBUS_TEMPERATURE_PATH: current,
+                    DBUS_TARGET_TEMPERATURE_PATH: target,
                     _HVAC_MODE: _token(climate.get("mode")),
                     "/Climate/HvacAction": _token(climate.get("action")),
                 }
@@ -120,12 +126,10 @@ def _snapshot(status: Mapping, *, commands_supported: bool = False) -> dict:
     mode = status.get("mode")
     values["/Climate/ServiceMode"] = mode if mode in ("observe", "active") else "unknown"
     values["/Climate/Phase"] = _token(status.get("phase"))
-    values["/Climate/EstimatedHeatingPower"] = _number(
-        status.get("estimated_heating_power_w"), 0, 20000
-    )
+    values[DBUS_HEATING_POWER_PATH] = _number(status.get("estimated_heating_power_w"), 0, 20000)
     values["/Climate/LastUpdate"] = _number(status.get("generated_at"), 0, 1e12)
     values["/Climate/IntegrationHealthy"] = int(
-        values["/Connected"] == 1 and status.get("errors") == []
+        values[DBUS_CONNECTED_PATH] == 1 and status.get("errors") == []
     )
     _control_snapshot(status.get("control"), values, commands_supported)
     return values
@@ -134,15 +138,15 @@ def _snapshot(status: Mapping, *, commands_supported: bool = False) -> dict:
 def _control_snapshot(control, values, commands_supported):
     """Advertise observed values and only capabilities backed by the broker."""
     mode = values[_HVAC_MODE]
-    if values["/Connected"]:
-        values[f"{_TEMPERATURE}/Measurement"] = values["/Temperature"]
+    if values[DBUS_CONNECTED_PATH]:
+        values[f"{_TEMPERATURE}/Measurement"] = values[DBUS_TEMPERATURE_PATH]
         if mode == "heat":
-            values[f"{_TEMPERATURE}/Dimming"] = values["/Climate/TargetTemperature"]
+            values[f"{_TEMPERATURE}/Dimming"] = values[DBUS_TARGET_TEMPERATURE_PATH]
         values[f"{_MODE}/Dimming"] = {"off": 0, "heat": 1}.get(mode)
     if not commands_supported or not isinstance(control, Mapping):
         return
     enabled = control.get("enabled") is True
-    available = enabled and control.get("available") is True and bool(values["/Connected"])
+    available = enabled and control.get("available") is True and bool(values[DBUS_CONNECTED_PATH])
     values[_CONTROL_ENABLED] = int(enabled)
     values[_CONTROL_AVAILABLE] = int(available)
     values[_CONTROL_PENDING] = int(control.get("pending") is True)
@@ -426,9 +430,9 @@ class _Device:
 
     def _path_options(self, path):
         options = {}
-        if path in ("/Temperature", "/Climate/TargetTemperature"):
+        if path in (DBUS_TEMPERATURE_PATH, DBUS_TARGET_TEMPERATURE_PATH):
             options["gettextcallback"] = _temperature_text
-        elif path == "/Climate/EstimatedHeatingPower":
+        elif path == DBUS_HEATING_POWER_PATH:
             options["gettextcallback"] = lambda _p, v: "" if v is None else f"{v:g} W"
         if (
             path in (f"{_TEMPERATURE}/Dimming", f"{_MODE}/Dimming")
@@ -571,7 +575,7 @@ class _Device:
         self.values = dict(values)
         self.received_at = received_at
         if self.service is None:
-            if values["/Connected"]:
+            if values[DBUS_CONNECTED_PATH]:
                 self._register()
             return
         # The context emits one root ItemsChanged containing actual changes,
@@ -696,6 +700,43 @@ class DbusDevicePublisher:
             # unbounded backlog or replay old temperatures after recovery.
             self._pending = (self._clock(), snapshot)
 
+    def _make_dispatch(self, device, loop, last_update, last_connected, stale):
+        def dispatch():
+            nonlocal last_update, last_connected, stale
+            try:
+                if self._stop.is_set() or self._failed:
+                    loop.quit()
+                    return True
+                with self._lock:
+                    pending, self._pending = self._pending, None
+                if pending is not None:
+                    last_update, values = pending
+                    if self._clock() - last_update < self._stale_seconds:
+                        device.update(values, last_update)
+                        if values[DBUS_CONNECTED_PATH]:
+                            last_connected = last_update
+                        stale = False
+                device.refresh_controls()
+                if (
+                    last_update is not None
+                    and self._clock() - last_update >= self._stale_seconds
+                    and not stale
+                ):
+                    device.invalidate()
+                    stale = True
+                if self._clock() - last_connected >= self._stale_seconds:
+                    # A vanished direct counterpart should disappear from
+                    # Venus. Keep only the observer/settings subscription so
+                    # a fresh observation can re-announce the same device.
+                    device.close()
+                return True
+            except Exception:
+                self._failed = True
+                loop.quit()
+                return True
+
+        return dispatch
+
     def _run(self):
         bus = device = glib = None
         timer = None
@@ -719,39 +760,7 @@ class DbusDevicePublisher:
 
             bus.call_on_disconnection(disconnected)
 
-            def dispatch():
-                nonlocal last_update, last_connected, stale
-                try:
-                    if self._stop.is_set() or self._failed:
-                        loop.quit()
-                        return True
-                    with self._lock:
-                        pending, self._pending = self._pending, None
-                    if pending is not None:
-                        last_update, values = pending
-                        if self._clock() - last_update < self._stale_seconds:
-                            device.update(values, last_update)
-                            if values["/Connected"]:
-                                last_connected = last_update
-                            stale = False
-                    device.refresh_controls()
-                    if (
-                        last_update is not None
-                        and self._clock() - last_update >= self._stale_seconds
-                        and not stale
-                    ):
-                        device.invalidate()
-                        stale = True
-                    if self._clock() - last_connected >= self._stale_seconds:
-                        # A vanished direct counterpart should disappear from
-                        # Venus. Keep only the observer/settings subscription so
-                        # a fresh observation can re-announce the same device.
-                        device.close()
-                    return True
-                except Exception:
-                    self._failed = True
-                    loop.quit()
-                    return True
+            dispatch = self._make_dispatch(device, loop, last_update, last_connected, stale)
 
             timer = glib.timeout_add(1000, dispatch)
             self._ready.set()
