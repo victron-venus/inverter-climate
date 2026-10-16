@@ -1,5 +1,9 @@
 # Release-candidate fuzz testing
 
+See the [illustrated RC fuzzing process and verified rollout results](https://github.com/victron-venus/venus-os-ci-toolkit/blob/main/docs/rc-fuzzing-results.md)
+for the shared release flow, evidence requirements and a dated cross-project
+snapshot. The project-specific scope and reproduction guidance below still apply.
+
 ## Scope and assertions
 
 **climate.** The real Climate parser and temperature-command validator receive synthetic thermostat observations. Accepted ranges, step sizes and commands must be finite and bounded. No thermostat, Home Assistant or D-Bus action is performed.
