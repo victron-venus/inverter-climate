@@ -1,3 +1,3 @@
 """Home Assistant climate coordination with Victron energy observations."""
 
-__version__ = "0.4.1"
+__version__ = "0.4.2"
