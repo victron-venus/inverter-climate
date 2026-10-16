@@ -1,6 +1,6 @@
 FROM ghcr.io/astral-sh/uv:0.13.0@sha256:cdc6093146eb3ff6a40107b38f008b789e050e77ad87865e381d9917da55a168 AS uv
 # renovate: datasource=docker depName=python currentValue=3.15-slim
-FROM python@sha256:ea4f1f290e071bf7d28199cfb3e09f5dbad31b50e9c32fd58f2f2d7be915f3ae AS build
+FROM python@sha256:f48fda6d59b2b3437781d1c3ccf4aa0e26ae871de3cdd758b49ab45ee7291619 AS build
 COPY --from=uv /uv /usr/local/bin/uv
 WORKDIR /app
 COPY pyproject.toml uv.lock README.md ./
@@ -10,7 +10,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-build --python /usr/local/bin/python
 
 # renovate: datasource=docker depName=python currentValue=3.15-slim
-FROM python@sha256:ea4f1f290e071bf7d28199cfb3e09f5dbad31b50e9c32fd58f2f2d7be915f3ae
+FROM python@sha256:f48fda6d59b2b3437781d1c3ccf4aa0e26ae871de3cdd758b49ab45ee7291619
 RUN groupadd --gid 10001 climate && useradd --uid 10001 --gid climate --no-create-home climate \
     && mkdir /data && chown climate:climate /data
 WORKDIR /app
