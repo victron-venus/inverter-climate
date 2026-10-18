@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.4.4] - 2026-10-18
+
+### Changed
+
+- Refresh the pinned Python container image and shared CI workflows.
+
+### Upgrade
+
+Use the documented upgrade procedure and preserve local configuration and data. No configuration migration is required. Keep the previous immutable release available for rollback.
+
+### Security
+
+This maintenance release preserves the existing security and release-validation requirements. Publication does not deploy the service or establish physical-device acceptance.
+
 ## [0.4.3] - 2026-10-17
 
 ### Changed
