@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.3] - 2026-10-17
+
+### Changed
+
+- Keep shared JSONata runtime dependency updates enabled in Renovate.
+- Link the maintained RC fuzzing process and results.
+
+### Upgrade
+
+Use the existing update procedure and preserve local configuration. This maintenance release changes dependency-update configuration, not the device configuration format.
+
+### Security
+
+Dependency automation remains enabled; this release does not claim a new runtime vulnerability fix or target-device acceptance.
+
 ## [0.4.2] - 2026-10-14
 
 ### Changed
