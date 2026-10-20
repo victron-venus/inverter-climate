@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.5] - 2026-10-20
+
+### Changed
+
+- Refresh the pinned Python 3.15 container image used for build and runtime.
+- Align the release-candidate fuzz workflow and its runner with the reviewed shared CI revision; fuzz campaigns remain limited to public release candidates.
+
+### Upgrade
+
+No configuration or data migration is required. Preserve local configuration and retain the previous immutable release for rollback.
+
+### Security
+
+The updated image and workflows remain pinned to immutable digests and commits. All existing quality, security and RC fuzzing gates remain required; this maintenance update does not claim a new vulnerability fix.
+
 ## [0.4.4] - 2026-10-18
 
 ### Changed
