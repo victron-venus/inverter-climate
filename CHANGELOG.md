@@ -15,6 +15,8 @@ No configuration or data migration is required. Preserve local configuration and
 
 ### Security
 
+- Use uv 0.13.4 for CI, release packaging, and the container build stage to remove the distrusted emSign root from the build tool's own TLS trust store (GHSA-hq85-5cpj-mr62).
+
 The certificate bundle removes the distrusted emSign ECC Root CA - G3 (GHSA-6q48-6c7w-9gw2). Certificate and hostname verification remain enabled. Images and workflows remain pinned, and all existing quality, security and RC fuzzing gates remain required. Offline checks do not establish live thermostat or device acceptance.
 
 ## [0.4.4] - 2026-10-18
