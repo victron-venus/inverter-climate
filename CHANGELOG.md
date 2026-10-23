@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Update the locked certifi certificate bundle to 2026.10.19.
+- Allow the release API status to catch up for up to five minutes while preserving exact run identity, attempt and required-check validation.
 - Refresh the pinned Python 3.15 container image used for build and runtime.
 - Align the release-candidate fuzz workflow and its runner with the reviewed shared CI revision; fuzz campaigns remain limited to public release candidates.
 
@@ -13,7 +15,7 @@ No configuration or data migration is required. Preserve local configuration and
 
 ### Security
 
-The updated image and workflows remain pinned to immutable digests and commits. All existing quality, security and RC fuzzing gates remain required; this maintenance update does not claim a new vulnerability fix.
+The certificate bundle removes the distrusted emSign ECC Root CA - G3 (GHSA-6q48-6c7w-9gw2). Certificate and hostname verification remain enabled. Images and workflows remain pinned, and all existing quality, security and RC fuzzing gates remain required. Offline checks do not establish live thermostat or device acceptance.
 
 ## [0.4.4] - 2026-10-18
 
