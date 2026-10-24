@@ -71,7 +71,8 @@
         "/^Dockerfile$/"
       ],
       "matchStrings": [
-        "# renovate: datasource=docker depName=python currentValue=(?<currentValue>[^\\s]+)\\s+FROM (?<depName>python)@(?<currentDigest>sha256:[a-f0-9]{64})"
+        "# renovate: datasource=docker depName=python currentValue=(?<currentValue>[^\\s]+)\\s+FROM (?<depName>python)@(?<currentDigest>sha256:[a-f0-9]{64})",
+        "# renovate: datasource=docker depName=ghcr.io/astral-sh/uv currentValue=(?<currentValue>[^\\s]+)\\s+FROM (?<depName>ghcr.io/astral-sh/uv)@(?<currentDigest>sha256:[a-f0-9]{64})"
       ],
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
