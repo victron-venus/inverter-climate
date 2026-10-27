@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.6] - 2026-10-27
+
+### Changed
+
+- Refresh the pinned Python runtime and uv build images used by the application container.
+- Keep dependency locking and the existing climate-control configuration unchanged.
+
 ## [0.4.5] - 2026-10-20
 
 ### Changed
