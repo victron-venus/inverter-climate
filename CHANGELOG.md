@@ -7,6 +7,14 @@
 - Refresh the pinned Python runtime and uv build images used by the application container.
 - Keep dependency locking and the existing climate-control configuration unchanged.
 
+### Upgrade
+
+Use the existing container update procedure, preserving climate-control configuration and persistent data. Retain the previous immutable image for rollback. No configuration or data migration is required.
+
+### Security
+
+Keep certificate and hostname verification enabled and retain the pinned dependency and image inputs. This image maintenance does not change authorization or transport trust requirements and does not establish live thermostat or device acceptance.
+
 ## [0.4.5] - 2026-10-20
 
 ### Changed
