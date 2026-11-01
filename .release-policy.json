@@ -79,6 +79,9 @@
         "value": "package",
         "ecosystem": "pep440"
       }
+    ],
+    "required_build_receipts": [
+      "release-inputs-package.json"
     ]
   },
   "release_notes": "CHANGELOG.md",
