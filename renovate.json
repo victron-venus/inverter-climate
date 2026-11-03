@@ -45,12 +45,13 @@
       "pinDigests": true
     },
     {
-      "description": "Python tag annotations and immutable digests are updated together by the regex manager.",
+      "description": "Python and uv tag annotations and immutable digests are updated together by the regex manager.",
       "matchManagers": [
         "dockerfile"
       ],
       "matchPackageNames": [
-        "python"
+        "python",
+        "ghcr.io/astral-sh/uv"
       ],
       "enabled": false
     },
