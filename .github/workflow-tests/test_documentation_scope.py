@@ -39,26 +39,40 @@ class DocumentationScopeTests(unittest.TestCase):
         self.assertEqual(
             caller["with"]["run-heavy-tests"], "${{ needs.scope.outputs.run == 'true' }}"
         )
-        self.assertEqual(
-            workflow("release-pipeline.yml")["jobs"]["checks"]["with"]["force-full"], "true"
+        release = workflow("release-pipeline.yml")
+        self.assertEqual(release["jobs"]["checks"]["with"]["force-full"], "true")
+        classifier = next(
+            step for step in release["jobs"]["scope"]["steps"] if step.get("id") == "scope"
         )
+        self.assertEqual(classifier["env"]["FORCE_FULL"], "true")
 
-    def test_packaging_readme_remains_a_required_input(self):
+    def test_release_notes_and_packaging_readme_remain_required(self):
         policy = json.loads((ROOT / ".release-policy.json").read_text())
-        self.assertIn("README.md", policy["change_scope"]["required_paths"])
-        for name in ("quality-gate.yml", "release-pipeline.yml"):
-            steps = workflow(name)["jobs"]["scope"]["steps"]
-            classifier = next(step for step in steps if step.get("id") == "scope")
-            self.assertIn("README.md", json.loads(classifier["env"]["REQUIRED_PATHS"]))
-        for mode in ("M", "D"):
-            if mode == "M":
-                raw = b":100644 100644 " + b"1" * 40 + b" " + b"2" * 40 + b" M\0README.md\0"
-            else:
-                raw = b":100644 000000 " + b"1" * 40 + b" " + b"0" * 40 + b" D\0README.md\0"
-            self.assertEqual(
-                scope.classify_diff(raw, frozenset(), frozenset({"README.md"})),
-                {"run": True, "reason": "required-path-change"},
-            )
+        required = frozenset(policy["change_scope"]["required_paths"])
+        self.assertIn("README.md", required)
+        self.assertIn(policy["release_notes"], required)
+        steps = workflow("quality-gate.yml")["jobs"]["scope"]["steps"]
+        classifier = next(step for step in steps if step.get("id") == "scope")
+        self.assertEqual(frozenset(json.loads(classifier["env"]["REQUIRED_PATHS"])), required)
+        for name in required:
+            for mode in ("M", "D"):
+                raw = (
+                    b":100644 "
+                    + (b"100644" if mode == "M" else b"000000")
+                    + b" "
+                    + b"1" * 40
+                    + b" "
+                    + (b"2" if mode == "M" else b"0") * 40
+                    + b" "
+                    + mode.encode()
+                    + b"\0"
+                    + name.encode()
+                    + b"\0"
+                )
+                self.assertEqual(
+                    scope.classify_diff(raw, frozenset(), required),
+                    {"run": True, "reason": "required-path-change"},
+                )
 
     def test_real_events_fail_closed(self):
         with tempfile.TemporaryDirectory() as directory:
