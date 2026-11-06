@@ -41,7 +41,9 @@ class DocumentationScopeTests(unittest.TestCase):
         )
         release = workflow("release-pipeline.yml")
         self.assertEqual(release["jobs"]["checks"]["with"]["force-full"], "true")
-        classifier = next(step for step in release["jobs"]["scope"]["steps"] if step.get("id") == "scope")
+        classifier = next(
+            step for step in release["jobs"]["scope"]["steps"] if step.get("id") == "scope"
+        )
         self.assertEqual(classifier["env"]["FORCE_FULL"], "true")
 
     def test_release_notes_and_packaging_readme_remain_required(self):
@@ -55,10 +57,17 @@ class DocumentationScopeTests(unittest.TestCase):
         for name in required:
             for mode in ("M", "D"):
                 raw = (
-                    b":100644 " + (b"100644" if mode == "M" else b"000000")
-                    + b" " + b"1" * 40 + b" "
+                    b":100644 "
+                    + (b"100644" if mode == "M" else b"000000")
+                    + b" "
+                    + b"1" * 40
+                    + b" "
                     + (b"2" if mode == "M" else b"0") * 40
-                    + b" " + mode.encode() + b"\0" + name.encode() + b"\0"
+                    + b" "
+                    + mode.encode()
+                    + b"\0"
+                    + name.encode()
+                    + b"\0"
                 )
                 self.assertEqual(
                     scope.classify_diff(raw, frozenset(), required),
