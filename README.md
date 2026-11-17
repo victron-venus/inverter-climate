@@ -288,7 +288,7 @@ This is an independent integration using the documented Venus D-Bus interface.
 - [SetupHelper](https://github.com/victron-venus/SetupHelper) — Venus OS package-management helpers; use this project’s native installation guide for its lifecycle.
 - [venus-os-observability](https://github.com/victron-venus/venus-os-observability) — optional Venus D-Bus metrics and diagnostics.
 
-Browse the [public project catalog](https://victron-venus.github.io/.github/projects.html)
+Browse the [public project catalog](https://victron-venus.github.io/#projects)
 for other Venus OS packages and companion tools. Each project documents its own
 installation, compatibility and release requirements.
 
