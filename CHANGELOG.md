@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.4.7] - Unreleased
+
+### Changed
+
+- keep local instruction files out of git.
+- add a navigation index for docs/.
+- add line-ending and language attributes.
+- point the catalog link at the maintained site anchor.
+- verify the current default branch before reviewed merges.
+- preserve automerge withdrawal after base advances (#86).
+- reevaluate reviewed dependency merges after CI (#85).
+- cover ordinary documentation without weakening validation (#83).
+- retain full qualification of release successors (#82).
+- keep required checks while skipping documentation-only builds (#81).
+
+### Upgrade
+
+Use the existing container update procedure, preserving climate-control configuration and persistent data. Retain the previous immutable image for rollback. No configuration or data migration is required.
+
+### Security
+
+Keep certificate and hostname verification enabled and retain the pinned dependency and image inputs. This image maintenance does not change authorization or transport trust requirements and does not establish live thermostat or device acceptance.
+
 ## [0.4.6] - 2026-10-27
 
 ### Changed
