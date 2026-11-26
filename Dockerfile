@@ -1,5 +1,5 @@
-# renovate: datasource=docker depName=ghcr.io/astral-sh/uv currentValue=0.13.9
-FROM ghcr.io/astral-sh/uv@sha256:d3b601f0c7b118bc1753febf7c41cc80981df678445e0254284eecf84db79a7d AS uv
+# renovate: datasource=docker depName=ghcr.io/astral-sh/uv currentValue=0.13.10
+FROM ghcr.io/astral-sh/uv@sha256:a3ea1357342c1a4bf9a0c53a3deb1b55379aefa037338d8113d5771efa01774f AS uv
 # renovate: datasource=docker depName=python currentValue=3.15-slim
 FROM python@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5 AS build
 COPY --from=uv /uv /usr/local/bin/uv
